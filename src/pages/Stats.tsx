@@ -13,6 +13,13 @@ function StatTile({ label, value }: { label: string; value: string }) {
 const fmt = (n: number | null, digits = 1, suffix = '') =>
   n === null ? '—' : `${n.toFixed(digits)}${suffix}`
 
+const toParLabel = (n: number | null) => {
+  if (n === null) return '—'
+  const rounded = Math.round(n * 10) / 10
+  if (rounded === 0) return 'E'
+  return rounded > 0 ? `+${rounded}` : String(rounded)
+}
+
 export function Stats() {
   const [stats, setStats] = useState<StatsSummary | null>(null)
   const [clubs, setClubs] = useState<ClubStats[]>([])
@@ -44,20 +51,19 @@ export function Stats() {
       </p>
 
       <div className="grid grid-cols-2 gap-3">
-        <StatTile label="Scoring average" value={fmt(stats.scoringAverage)} />
-        <StatTile
-          label="Best round (to par)"
-          value={stats.bestRound ? (stats.bestRound.toPar > 0 ? `+${stats.bestRound.toPar}` : String(stats.bestRound.toPar)) : '—'}
-        />
+        <StatTile label="Avg score (to par)" value={toParLabel(stats.avgToPar)} />
+        <StatTile label="Best round (to par)" value={stats.bestRound ? toParLabel(stats.bestRound.toPar) : '—'} />
         <StatTile label="Fairways hit" value={fmt(stats.fairwaysHitPct, 0, '%')} />
         <StatTile label="Greens in regulation" value={fmt(stats.girPct, 0, '%')} />
-        <StatTile label="Putts per round" value={fmt(stats.puttsPerRound)} />
+        <StatTile label="Putts per 9 holes" value={fmt(stats.puttsPer9)} />
         <StatTile label="Scrambling" value={fmt(stats.scramblingPct, 0, '%')} />
       </div>
 
       {Object.keys(stats.penaltyBreakdown).length > 0 && (
         <div className="bg-neutral-900 rounded-2xl p-4">
-          <div className="font-semibold text-white mb-2">Penalties</div>
+          <div className="font-semibold text-white mb-2">
+            Penalties <span className="text-neutral-500 font-normal">({fmt(stats.penaltiesPer9)} per 9 holes)</span>
+          </div>
           {Object.entries(stats.penaltyBreakdown).map(([type, count]) => (
             <div key={type} className="flex justify-between text-sm text-neutral-400 py-1">
               <span className="capitalize">{type}</span>
@@ -88,9 +94,12 @@ export function Stats() {
         <div className="font-semibold text-white mb-2">Recent rounds</div>
         {stats.recentRounds.map((r) => (
           <div key={r.roundId} className="flex justify-between text-sm text-neutral-400 py-1">
-            <span>{new Date(r.date).toLocaleDateString()}</span>
             <span>
-              {r.totalStrokes} ({r.toPar > 0 ? `+${r.toPar}` : r.toPar})
+              {new Date(r.date).toLocaleDateString()}{' '}
+              <span className="text-neutral-600">({r.holesPlayed}H)</span>
+            </span>
+            <span>
+              {r.totalStrokes} ({toParLabel(r.toPar)})
             </span>
           </div>
         ))}

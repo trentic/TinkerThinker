@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type TouchEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { BigButton } from '../components/BigButton'
+import { Modal } from '../components/Modal'
 import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
 import type { Course, Hole, HoleScore, PenaltyType, Round, Tee } from '../db/schema'
@@ -48,6 +49,9 @@ export function RoundActive() {
   const [askFairway, setAskFairway] = useState(false)
   const [puttMode, setPuttMode] = useState(false)
   const [strokesBeforePutting, setStrokesBeforePutting] = useState<number | null>(null)
+  // Tracks whether entering putt mode just captured this hole's first-ever
+  // green location, so a mis-tap can be backed out cleanly (see leavePuttMode).
+  const [justCapturedGreen, setJustCapturedGreen] = useState(false)
   const [showPenaltyMenu, setShowPenaltyMenu] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>([])
 
@@ -112,6 +116,7 @@ export function RoundActive() {
     setAskFairway(false)
     setPuttMode(false)
     setStrokesBeforePutting(null)
+    setJustCapturedGreen(false)
     setTarget(null)
     setPlaysLike(null)
     setHistory([])
@@ -219,6 +224,16 @@ export function RoundActive() {
 
   async function applyPenalty(type: PenaltyType) {
     if (!round || !currentHole) return
+    // Best known position for where the penalty happened: the last marked
+    // shot, a live GPS reading (refreshMyPosition falls back to the last
+    // known fix on its own if a fresh read fails), and only as a last
+    // resort the hole's own location — never (0,0), which would silently
+    // record a shot in the Gulf of Guinea.
+    const position = lastMarkedPos ?? (await refreshMyPosition()) ?? {
+      lat: currentHole.centerLat,
+      lng: currentHole.centerLng,
+    }
+
     const nextStroke = strokes + 1
     const shotId = newId()
     await db.shots.add({
@@ -226,8 +241,8 @@ export function RoundActive() {
       roundId: round.id,
       holeNumber: currentHole.number,
       strokeNumber: nextStroke,
-      lat: (lastMarkedPos ?? myPos)?.lat ?? 0,
-      lng: (lastMarkedPos ?? myPos)?.lng ?? 0,
+      lat: position.lat,
+      lng: position.lng,
       type: 'penalty',
       penaltyType: type,
       timestamp: Date.now(),
@@ -249,8 +264,26 @@ export function RoundActive() {
         setHolesList((prev) =>
           prev.map((h) => (h.id === currentHole.id ? { ...h, greenLat: pos.lat, greenLng: pos.lng } : h)),
         )
+        setJustCapturedGreen(true)
       }
     }
+  }
+
+  // Backs out of a mis-tapped "On the green" — e.g. a chip that didn't
+  // actually reach the green and needs another GPS-tracked approach shot,
+  // not a putt. If we just captured this hole's green location moments ago
+  // and nothing was putted yet, undo that capture too rather than leaving a
+  // wrong green position saved permanently.
+  async function leavePuttMode() {
+    if (justCapturedGreen && putts === 0 && currentHole) {
+      await db.holes.update(currentHole.id, { greenLat: undefined, greenLng: undefined })
+      setHolesList((prev) =>
+        prev.map((h) => (h.id === currentHole.id ? { ...h, greenLat: undefined, greenLng: undefined } : h)),
+      )
+    }
+    setJustCapturedGreen(false)
+    setStrokesBeforePutting(null)
+    setPuttMode(false)
   }
 
   function addPutt() {
@@ -449,6 +482,9 @@ export function RoundActive() {
                     <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
                       Lost / Hazard
                     </BigButton>
+                    <BigButton variant="ghost" onClick={leavePuttMode} disabled={putts > 0}>
+                      Not on the green after all
+                    </BigButton>
                   </div>
                 )}
 
@@ -530,20 +566,6 @@ export function RoundActive() {
           </div>
         </Modal>
       )}
-    </div>
-  )
-}
-
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-neutral-900 rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="text-white font-semibold text-lg mb-3">{title}</div>
-        {children}
-      </div>
     </div>
   )
 }

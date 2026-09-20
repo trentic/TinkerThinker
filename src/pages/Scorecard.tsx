@@ -32,7 +32,7 @@ export function Scorecard() {
     })()
   }, [roundId])
 
-  if (!round || !course) return <div className="p-4 text-neutral-500">Loading…</div>
+  if (!round) return <div className="p-4 text-neutral-500">Loading…</div>
 
   const front = scores.filter((s) => s.holeNumber <= 9)
   const back = scores.filter((s) => s.holeNumber > 9)
@@ -42,7 +42,7 @@ export function Scorecard() {
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
       <div>
-        <h1 className="text-2xl font-bold text-white mt-2">{course.name}</h1>
+        <h1 className="text-2xl font-bold text-white mt-2">{course?.name ?? 'Deleted course'}</h1>
         <p className="text-neutral-500 text-sm">
           {new Date(round.date).toLocaleDateString()} · {tee?.name ?? ''} tees
         </p>

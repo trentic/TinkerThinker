@@ -291,6 +291,9 @@ export function CourseBuilder() {
 
       {step === 'confirm' && center && (
         <div className="flex flex-col gap-3">
+          <button onClick={() => setStep('locate')} className="self-start text-neutral-400 text-sm underline">
+            ‹ Back
+          </button>
           <p className="text-neutral-400 text-sm">
             OpenStreetMap already has all {holeCount} holes mapped for this course.{' '}
             {holeOutlines.length > 0
@@ -309,6 +312,15 @@ export function CourseBuilder() {
 
       {step === 'map' && center && (
         <div className="flex flex-col gap-3">
+          <button
+            onClick={() => {
+              setHoles([])
+              setStep('locate')
+            }}
+            className="self-start text-neutral-400 text-sm underline"
+          >
+            ‹ Back
+          </button>
           <p className="text-neutral-400 text-sm">
             Tap the middle of hole {holes.length + 1} on the satellite view, in playing order.
             Gray dots are OpenStreetMap's reference data for this area, if any exists.
@@ -332,6 +344,12 @@ export function CourseBuilder() {
 
       {step === 'tees' && (
         <div className="flex flex-col gap-3">
+          <button
+            onClick={() => setStep(usedAutoMap ? 'confirm' : 'map')}
+            className="self-start text-neutral-400 text-sm underline"
+          >
+            ‹ Back
+          </button>
           <p className="text-neutral-400 text-sm">Which tee boxes does this course have?</p>
           <div className="flex flex-col gap-2">
             {tees.map((t) => (
@@ -363,6 +381,9 @@ export function CourseBuilder() {
 
       {step === 'review' && (
         <div className="flex flex-col gap-4">
+          <button onClick={() => setStep('tees')} className="self-start text-neutral-400 text-sm underline">
+            ‹ Back
+          </button>
           <input
             className="bg-neutral-900 border border-neutral-700 rounded-xl px-4 py-3 text-white"
             placeholder="Course name"

@@ -3,7 +3,9 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
 import { db, newId } from '../db/db'
 import { BigButton } from '../components/BigButton'
+import { Modal } from '../components/Modal'
 import { daysSinceLastBackup } from '../db/backup'
+import { checkCourseDeletable, deleteCourseCascade } from '../db/courseActions'
 
 type HoleSelection = 'all18' | 'front9' | 'back9'
 
@@ -12,6 +14,9 @@ export function Home() {
   const courses = useLiveQuery(() => db.courses.orderBy('name').toArray(), [])
   const [pickingCourseId, setPickingCourseId] = useState<string | null>(null)
   const [pickingHolesFor, setPickingHolesFor] = useState<{ courseId: string; teeId: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [deleteBlockedReason, setDeleteBlockedReason] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const tees = useLiveQuery(
     () => (pickingCourseId ? db.tees.where('courseId').equals(pickingCourseId).sortBy('order') : []),
     [pickingCourseId],
@@ -22,6 +27,11 @@ export function Home() {
     const id = newId()
     await db.rounds.add({ id, courseId, teeId, date: Date.now(), completed: false, holeNumbers })
     navigate(`/round/${id}`)
+  }
+
+  function startPickingCourse(courseId: string) {
+    setPickingCourseId(courseId)
+    setPickingHolesFor(null)
   }
 
   function pickTee(course: { id: string; holeCount: 9 | 18 }, teeId: string) {
@@ -41,6 +51,28 @@ export function Home() {
           : Array.from({ length: 9 }, (_, i) => i + 10)
     setPickingHolesFor(null)
     void startRound(courseId, teeId, holeNumbers)
+  }
+
+  async function requestDeleteCourse(course: { id: string; name: string }) {
+    const check = await checkCourseDeletable(course.id)
+    if (!check.canDelete) {
+      setDeleteBlockedReason(check.reason ?? 'This course can\'t be deleted right now.')
+      return
+    }
+    setDeleteTarget(course)
+  }
+
+  async function confirmDeleteCourse() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deleteCourseCascade(deleteTarget.id)
+      setDeleteTarget(null)
+      if (pickingCourseId === deleteTarget.id) setPickingCourseId(null)
+      if (pickingHolesFor?.courseId === deleteTarget.id) setPickingHolesFor(null)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -73,9 +105,17 @@ export function Home() {
         )}
         {courses?.map((course) => (
           <div key={course.id} className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-3">
-            <div>
-              <div className="font-semibold text-white">{course.name}</div>
-              <div className="text-neutral-500 text-sm">{course.holeCount} holes</div>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold text-white">{course.name}</div>
+                <div className="text-neutral-500 text-sm">{course.holeCount} holes</div>
+              </div>
+              <button
+                onClick={() => requestDeleteCourse(course)}
+                className="text-neutral-600 text-xs underline shrink-0 mt-1"
+              >
+                Delete
+              </button>
             </div>
 
             {pickingHolesFor?.courseId === course.id ? (
@@ -118,13 +158,37 @@ export function Home() {
                 )}
               </div>
             ) : (
-              <BigButton variant="secondary" onClick={() => setPickingCourseId(course.id)}>
+              <BigButton variant="secondary" onClick={() => startPickingCourse(course.id)}>
                 Start round
               </BigButton>
             )}
           </div>
         ))}
       </div>
+
+      {deleteTarget && (
+        <Modal title={`Delete ${deleteTarget.name}?`} onClose={() => setDeleteTarget(null)}>
+          <p className="text-neutral-400 text-sm mb-4">
+            This removes the course and its tee boxes/hole map. Rounds and stats you already
+            recorded there are kept.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <BigButton variant="danger" onClick={confirmDeleteCourse} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </BigButton>
+            <BigButton variant="secondary" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              Cancel
+            </BigButton>
+          </div>
+        </Modal>
+      )}
+
+      {deleteBlockedReason && (
+        <Modal title="Can't delete this course" onClose={() => setDeleteBlockedReason(null)}>
+          <p className="text-neutral-400 text-sm mb-4">{deleteBlockedReason}</p>
+          <BigButton onClick={() => setDeleteBlockedReason(null)}>Got it</BigButton>
+        </Modal>
+      )}
     </div>
   )
 }

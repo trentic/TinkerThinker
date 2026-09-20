@@ -5,6 +5,7 @@ export interface RoundSummary {
   roundId: string
   courseId: string
   date: number
+  holesPlayed: number
   totalStrokes: number
   totalPar: number
   toPar: number
@@ -12,13 +13,13 @@ export interface RoundSummary {
 
 export interface StatsSummary {
   roundsPlayed: number
-  scoringAverage: number | null
+  avgToPar: number | null
   bestRound: RoundSummary | null
   fairwaysHitPct: number | null
   girPct: number | null
-  puttsPerRound: number | null
+  puttsPer9: number | null
   scramblingPct: number | null
-  penaltiesPerRound: number | null
+  penaltiesPer9: number | null
   penaltyBreakdown: Record<string, number>
   recentRounds: RoundSummary[]
 }
@@ -32,12 +33,13 @@ export async function computeStats(): Promise<StatsSummary> {
   let fairwayHit = 0
   let girEligible = 0
   let girHit = 0
-  let totalPutts = 0
-  let puttRounds = 0
   let missedGirCount = 0
   let scrambledCount = 0
-  let totalPenalties = 0
   const penaltyBreakdown: Record<string, number> = {}
+  // Per-round rates normalized to "per 9 holes" so a front-9 round and an
+  // 18-hole round don't get blended unfairly into the same raw average.
+  const puttRatesPer9: number[] = []
+  const penaltyRatesPer9: number[] = []
 
   for (const round of completedRounds) {
     const holeScores: HoleScore[] = await db.holeScores.where('roundId').equals(round.id).toArray()
@@ -49,12 +51,14 @@ export async function computeStats(): Promise<StatsSummary> {
       roundId: round.id,
       courseId: round.courseId,
       date: round.date,
+      holesPlayed: holeScores.length,
       totalStrokes,
       totalPar,
       toPar: totalStrokes - totalPar,
     })
 
     let roundPutts = 0
+    let roundPenalties = 0
     for (const h of holeScores) {
       if (h.fairwayHit !== null) {
         fairwayEligible++
@@ -70,21 +74,20 @@ export async function computeStats(): Promise<StatsSummary> {
         }
       }
       roundPutts += h.putts
-      totalPenalties += h.penalties.length
+      roundPenalties += h.penalties.length
       for (const p of h.penalties) {
         penaltyBreakdown[p] = (penaltyBreakdown[p] ?? 0) + 1
       }
     }
-    totalPutts += roundPutts
-    puttRounds++
+    puttRatesPer9.push((roundPutts / holeScores.length) * 9)
+    penaltyRatesPer9.push((roundPenalties / holeScores.length) * 9)
   }
 
   summaries.sort((a, b) => b.date - a.date)
 
-  const scoringAverage =
-    summaries.length > 0
-      ? summaries.reduce((sum, s) => sum + s.totalStrokes, 0) / summaries.length
-      : null
+  const avg = (nums: number[]) => (nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : null)
+
+  const avgToPar = avg(summaries.map((s) => s.toPar))
 
   const bestRound =
     summaries.length > 0
@@ -93,13 +96,13 @@ export async function computeStats(): Promise<StatsSummary> {
 
   return {
     roundsPlayed: summaries.length,
-    scoringAverage,
+    avgToPar,
     bestRound,
     fairwaysHitPct: fairwayEligible > 0 ? (fairwayHit / fairwayEligible) * 100 : null,
     girPct: girEligible > 0 ? (girHit / girEligible) * 100 : null,
-    puttsPerRound: puttRounds > 0 ? totalPutts / puttRounds : null,
+    puttsPer9: avg(puttRatesPer9),
     scramblingPct: missedGirCount > 0 ? (scrambledCount / missedGirCount) * 100 : null,
-    penaltiesPerRound: puttRounds > 0 ? totalPenalties / puttRounds : null,
+    penaltiesPer9: avg(penaltyRatesPer9),
     penaltyBreakdown,
     recentRounds: summaries.slice(0, 10),
   }
