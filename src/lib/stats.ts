@@ -1,5 +1,5 @@
 import { db } from '../db/db'
-import type { HoleScore, Shot } from '../db/schema'
+import type { HoleScore } from '../db/schema'
 
 export interface RoundSummary {
   roundId: string
@@ -111,12 +111,15 @@ export interface ClubStats {
   avgYards: number
   minYards: number
   maxYards: number
+  isSelfReported: boolean // true = no GPS shots yet, showing the manually entered yardage
 }
 
-// Self-sourced club distance calibration: derived entirely from the user's
-// own GPS-tracked shots, no external data needed.
+// Self-sourced club distance calibration: derived from the user's own
+// GPS-tracked shots. Clubs with no shots yet fall back to whatever yardage
+// the user typed into their bag in Settings (TrackMan-style seed value),
+// clearly marked as self-reported rather than measured.
 export async function computeClubDistances(): Promise<ClubStats[]> {
-  const shots: Shot[] = await db.shots.toArray()
+  const [shots, bagClubs] = await Promise.all([db.shots.toArray(), db.bagClubs.toArray()])
   const byClub = new Map<string, number[]>()
 
   for (const shot of shots) {
@@ -135,6 +138,19 @@ export async function computeClubDistances(): Promise<ClubStats[]> {
       avgYards: Math.round(distances.reduce((a, b) => a + b, 0) / distances.length),
       minYards: Math.round(Math.min(...distances)),
       maxYards: Math.round(Math.max(...distances)),
+      isSelfReported: false,
+    })
+  }
+
+  for (const bagClub of bagClubs) {
+    if (!bagClub.inBag || !bagClub.manualYardage || byClub.has(bagClub.club)) continue
+    results.push({
+      club: bagClub.club,
+      shotCount: 0,
+      avgYards: bagClub.manualYardage,
+      minYards: bagClub.manualYardage,
+      maxYards: bagClub.manualYardage,
+      isSelfReported: true,
     })
   }
 

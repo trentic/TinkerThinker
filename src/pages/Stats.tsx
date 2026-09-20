@@ -74,7 +74,10 @@ export function Stats() {
             <div key={c.club} className="flex justify-between text-sm text-neutral-400 py-1">
               <span>{c.club}</span>
               <span>
-                {c.avgYards}y avg <span className="text-neutral-600">({c.shotCount} shots)</span>
+                {c.avgYards}y{' '}
+                <span className="text-neutral-600">
+                  {c.isSelfReported ? '(self-reported)' : `(${c.shotCount} shots)`}
+                </span>
               </span>
             </div>
           ))}

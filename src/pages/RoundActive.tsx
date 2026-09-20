@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type TouchEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { BigButton } from '../components/BigButton'
 import { SatelliteMap, type MapPin } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
@@ -7,6 +8,7 @@ import type { Course, Hole, HoleScore, PenaltyType, Round, Tee } from '../db/sch
 import { distanceYards, getCurrentPosition, type LatLng } from '../lib/geo'
 import { calculatePlaysLike, getCurrentWind, getElevationMeters, type PlaysLikeResult } from '../lib/playsLike'
 import { COMMON_CLUBS } from '../lib/clubs'
+import { isMulliganEnabled } from '../lib/settings'
 
 const PENALTY_LABELS: Record<PenaltyType, string> = {
   water: 'Water hazard',
@@ -14,6 +16,13 @@ const PENALTY_LABELS: Record<PenaltyType, string> = {
   lost: 'Lost ball',
   unplayable: 'Unplayable lie',
 }
+
+type HistoryEntry =
+  | { kind: 'shot'; shotId: string; prevLastMarkedPos: LatLng | null; wasFirstShot: boolean }
+  | { kind: 'penalty'; shotId: string; penaltyType: PenaltyType }
+  | { kind: 'putt' }
+
+type Panel = 'shot' | 'clubs'
 
 export function RoundActive() {
   const { roundId } = useParams<{ roundId: string }>()
@@ -40,7 +49,18 @@ export function RoundActive() {
   const [puttMode, setPuttMode] = useState(false)
   const [strokesBeforePutting, setStrokesBeforePutting] = useState<number | null>(null)
   const [showPenaltyMenu, setShowPenaltyMenu] = useState(false)
-  const [clubPromptFor, setClubPromptFor] = useState<string | null>(null) // shot id
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+
+  const [panel, setPanel] = useState<Panel>('shot')
+  const [armedClub, setArmedClub] = useState<string | null>(null)
+  const touchStartX = useRef<number | null>(null)
+  const mulliganEnabled = useMemo(() => isMulliganEnabled(), [])
+
+  const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
+  const clubChoices = useMemo(() => {
+    const inBag = (bagClubs ?? []).filter((c) => c.inBag).map((c) => c.club)
+    return inBag.length > 0 ? inBag : COMMON_CLUBS
+  }, [bagClubs])
 
   const currentHole = useMemo(
     () => holesList.find((h) => h.number === currentHoleNumber) ?? null,
@@ -85,6 +105,9 @@ export function RoundActive() {
     setStrokesBeforePutting(null)
     setTarget(null)
     setPlaysLike(null)
+    setHistory([])
+    setArmedClub(null)
+    setPanel('shot')
     void refreshMyPosition()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentHoleNumber])
@@ -144,8 +167,10 @@ export function RoundActive() {
     const newPos = await refreshMyPosition()
     if (!newPos) return
 
-    const origin = lastMarkedPos ?? currentHole.teeCoords[tee?.id ?? ''] ?? null
-    const distance = origin ? Math.round(distanceYards(origin, newPos)) : undefined
+    // Log the distance from the previous shot (or the tee) before clearing
+    // the armed club, so it feeds the club's yardage stats.
+    const prevPos = lastMarkedPos ?? currentHole.teeCoords[tee?.id ?? ''] ?? null
+    const distance = prevPos ? Math.round(distanceYards(prevPos, newPos)) : undefined
 
     const nextStroke = strokes + 1
     const shotId = newId()
@@ -157,31 +182,37 @@ export function RoundActive() {
       lat: newPos.lat,
       lng: newPos.lng,
       type: nextStroke === 1 ? 'tee' : 'approach',
+      club: armedClub ?? undefined,
       distanceYardsFromPrev: distance,
       timestamp: Date.now(),
     })
 
+    setHistory((h) => [
+      ...h,
+      { kind: 'shot', shotId, prevLastMarkedPos: lastMarkedPos, wasFirstShot: strokes === 0 },
+    ])
     setStrokes(nextStroke)
     setLastMarkedPos(newPos)
     setTarget(null)
     setPlaysLike(null)
-    setClubPromptFor(shotId)
+    setArmedClub(null)
 
     if (nextStroke === 1 && currentHole.par >= 4) {
       setAskFairway(true)
     }
   }
 
-  async function assignClub(shotId: string, club: string | null) {
-    if (club) await db.shots.update(shotId, { club })
-    setClubPromptFor(null)
+  function selectClub(club: string) {
+    setArmedClub((prev) => (prev === club ? null : club))
+    setPanel('shot')
   }
 
   async function applyPenalty(type: PenaltyType) {
     if (!round || !currentHole) return
     const nextStroke = strokes + 1
+    const shotId = newId()
     await db.shots.add({
-      id: newId(),
+      id: shotId,
       roundId: round.id,
       holeNumber: currentHole.number,
       strokeNumber: nextStroke,
@@ -191,6 +222,7 @@ export function RoundActive() {
       penaltyType: type,
       timestamp: Date.now(),
     })
+    setHistory((h) => [...h, { kind: 'penalty', shotId, penaltyType: type }])
     setStrokes(nextStroke)
     setPenalties((prev) => [...prev, type])
     setShowPenaltyMenu(false)
@@ -212,8 +244,43 @@ export function RoundActive() {
   }
 
   function addPutt() {
+    setHistory((h) => [...h, { kind: 'putt' }])
     setPutts((p) => p + 1)
     setStrokes((s) => s + 1)
+  }
+
+  function handleMulligan() {
+    const last = history[history.length - 1]
+    if (!last) return
+    setHistory((h) => h.slice(0, -1))
+
+    if (last.kind === 'putt') {
+      setPutts((p) => Math.max(0, p - 1))
+      setStrokes((s) => Math.max(0, s - 1))
+      return
+    }
+
+    if (last.kind === 'penalty') {
+      setPenalties((prev) => {
+        const idx = prev.lastIndexOf(last.penaltyType)
+        if (idx === -1) return prev
+        const copy = [...prev]
+        copy.splice(idx, 1)
+        return copy
+      })
+      setStrokes((s) => Math.max(0, s - 1))
+      void db.shots.delete(last.shotId)
+      return
+    }
+
+    // kind === 'shot'
+    setStrokes((s) => Math.max(0, s - 1))
+    setLastMarkedPos(last.prevLastMarkedPos)
+    void db.shots.delete(last.shotId)
+    if (last.wasFirstShot) {
+      setFairwayHit(null)
+      setAskFairway(false)
+    }
   }
 
   async function finishHole() {
@@ -243,6 +310,18 @@ export function RoundActive() {
     }
   }
 
+  function onTouchStart(e: TouchEvent) {
+    touchStartX.current = e.touches[0].clientX
+  }
+
+  function onTouchEnd(e: TouchEvent) {
+    if (touchStartX.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if (panel === 'shot' && dx < -60) setPanel('clubs')
+    else if (panel === 'clubs' && dx > 60) setPanel('shot')
+  }
+
   if (!round || !course || !tee || !currentHole) {
     return <div className="p-4 text-neutral-500">Loading round…</div>
   }
@@ -266,55 +345,112 @@ export function RoundActive() {
         <span className="text-neutral-400 text-sm">{tee.name} tees</span>
       </div>
 
-      {!puttMode ? (
-        <>
-          <div className="h-72 rounded-2xl overflow-hidden relative">
-            <SatelliteMap center={mapCenter} pins={pins} onMapClick={(pos) => void handleTapTarget(pos)} />
-            {locating && (
-              <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                Locating…
+      <div className="overflow-hidden">
+        <div
+          className="flex transition-transform duration-200 ease-out"
+          style={{ width: '200%', transform: panel === 'clubs' ? 'translateX(-50%)' : 'translateX(0%)' }}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+        >
+          {/* Shot pane */}
+          <div className="w-1/2 pr-1 flex flex-col gap-3">
+            <button
+              onClick={() => setPanel('clubs')}
+              className="self-end text-neutral-400 text-sm underline"
+            >
+              🏌️ My bag ›
+            </button>
+
+            {armedClub && (
+              <div className="flex items-center justify-between bg-green-900/40 border border-green-700 rounded-xl px-3 py-2">
+                <span className="text-green-300 text-sm font-medium">Using {armedClub}</span>
+                <button onClick={() => setArmedClub(null)} className="text-green-400 text-xs underline">
+                  Clear
+                </button>
               </div>
             )}
-          </div>
-          <p className="text-neutral-500 text-xs -mt-1">Tap the map where you're aiming to see the yardage.</p>
 
-          {yardageLoading && <div className="text-neutral-400 text-sm">Calculating plays-like yardage…</div>}
-          {playsLike && !yardageLoading && (
-            <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-1">
-              <div className="text-3xl font-bold text-white">{playsLike.playsLikeYards} yd plays like</div>
-              <div className="text-neutral-500 text-sm">
-                {playsLike.actualYards} yd straight ·{' '}
-                {playsLike.elevationAdjustYards >= 0 ? '+' : ''}
-                {playsLike.elevationAdjustYards} elevation ·{' '}
-                {playsLike.windAdjustYards >= 0 ? '+' : ''}
-                {playsLike.windAdjustYards} wind
+            {!puttMode ? (
+              <>
+                <div className="h-72 rounded-2xl overflow-hidden relative">
+                  <SatelliteMap center={mapCenter} pins={pins} onMapClick={(pos) => void handleTapTarget(pos)} />
+                  {locating && (
+                    <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                      Locating…
+                    </div>
+                  )}
+                </div>
+                <p className="text-neutral-500 text-xs -mt-1">Tap the map where you're aiming to see the yardage.</p>
+
+                {yardageLoading && <div className="text-neutral-400 text-sm">Calculating plays-like yardage…</div>}
+                {playsLike && !yardageLoading && (
+                  <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-1">
+                    <div className="text-3xl font-bold text-white">{playsLike.playsLikeYards} yd plays like</div>
+                    <div className="text-neutral-500 text-sm">
+                      {playsLike.actualYards} yd straight ·{' '}
+                      {playsLike.elevationAdjustYards >= 0 ? '+' : ''}
+                      {playsLike.elevationAdjustYards} elevation ·{' '}
+                      {playsLike.windAdjustYards >= 0 ? '+' : ''}
+                      {playsLike.windAdjustYards} wind
+                    </div>
+                    <div className="text-neutral-600 text-xs">Estimate — not laser-precision.</div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <BigButton onClick={handleMarkShot}>Mark my ball (+1)</BigButton>
+                  <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
+                    Lost / Hazard
+                  </BigButton>
+                </div>
+                <BigButton variant="secondary" onClick={enterPuttMode}>
+                  On the green
+                </BigButton>
+              </>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="bg-neutral-900 rounded-2xl p-6 text-center">
+                  <div className="text-5xl font-bold text-white">{putts}</div>
+                  <div className="text-neutral-500 text-sm mt-1">putts this hole</div>
+                </div>
+                <BigButton onClick={addPutt}>+1 Putt</BigButton>
+                <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
+                  Lost / Hazard
+                </BigButton>
               </div>
-              <div className="text-neutral-600 text-xs">Estimate — not laser-precision.</div>
-            </div>
-          )}
+            )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <BigButton onClick={handleMarkShot}>Mark my ball (+1)</BigButton>
-            <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
-              Lost / Hazard
-            </BigButton>
+            {mulliganEnabled && (
+              <BigButton variant="ghost" onClick={handleMulligan} disabled={history.length === 0}>
+                ↩ Mulligan (undo last stroke)
+              </BigButton>
+            )}
           </div>
-          <BigButton variant="secondary" onClick={enterPuttMode}>
-            On the green
-          </BigButton>
-        </>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <div className="bg-neutral-900 rounded-2xl p-6 text-center">
-            <div className="text-5xl font-bold text-white">{putts}</div>
-            <div className="text-neutral-500 text-sm mt-1">putts this hole</div>
+
+          {/* Clubs pane */}
+          <div className="w-1/2 pl-1 flex flex-col gap-3">
+            <button onClick={() => setPanel('shot')} className="text-neutral-400 text-sm underline">
+              ‹ Back
+            </button>
+            <p className="text-neutral-500 text-xs -mt-1">
+              Tap the club you're using. It'll tag your next marked shot for club-distance stats.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {clubChoices.map((club) => (
+                <button
+                  key={club}
+                  onClick={() => selectClub(club)}
+                  className={`min-h-14 rounded-xl text-sm font-semibold ${
+                    armedClub === club ? 'bg-green-600 text-white' : 'bg-neutral-800 text-neutral-200'
+                  }`}
+                >
+                  {club}
+                </button>
+              ))}
+            </div>
           </div>
-          <BigButton onClick={addPutt}>+1 Putt</BigButton>
-          <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
-            Lost / Hazard
-          </BigButton>
         </div>
-      )}
+      </div>
 
       <div className="bg-neutral-900 rounded-2xl p-4 flex justify-between items-center">
         <span className="text-neutral-400 text-sm">Strokes this hole</span>
@@ -358,25 +494,6 @@ export function RoundActive() {
               </BigButton>
             ))}
           </div>
-        </Modal>
-      )}
-
-      {clubPromptFor && (
-        <Modal onClose={() => assignClub(clubPromptFor, null)} title="Which club?">
-          <div className="grid grid-cols-3 gap-2">
-            {COMMON_CLUBS.map((club) => (
-              <button
-                key={club}
-                onClick={() => assignClub(clubPromptFor, club)}
-                className="min-h-12 rounded-xl bg-neutral-800 text-neutral-200 text-sm font-medium"
-              >
-                {club}
-              </button>
-            ))}
-          </div>
-          <button onClick={() => assignClub(clubPromptFor, null)} className="text-neutral-500 text-sm mt-3 underline">
-            Skip
-          </button>
         </Modal>
       )}
     </div>

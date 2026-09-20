@@ -67,6 +67,14 @@ export interface HoleScore {
   greenInRegulation: boolean | null
 }
 
+export interface BagClub {
+  club: string // primary key, matches an entry in lib/clubs.ts
+  inBag: boolean
+  // Self-reported "I know I hit this X yards" — a TrackMan-style seed value
+  // shown until real GPS-derived shot data takes over.
+  manualYardage?: number
+}
+
 export type ShotType = 'tee' | 'approach' | 'putt' | 'penalty'
 
 export interface Shot {
