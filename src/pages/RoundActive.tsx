@@ -83,9 +83,17 @@ export function RoundActive() {
       ])
       setCourse(c ?? null)
       setTee(t ?? null)
-      setHolesList(holes)
+
+      // Only the holes this round actually covers (front 9 / back 9 / all
+      // 18), in the order the round plays them.
+      const holeByNumber = new Map(holes.map((h) => [h.number, h]))
+      const orderedHoles = r.holeNumbers
+        .map((n) => holeByNumber.get(n))
+        .filter((h): h is Hole => h !== undefined)
+      setHolesList(orderedHoles)
+
       const doneNumbers = new Set(doneScores.map((h) => h.holeNumber))
-      const next = holes.find((h) => !doneNumbers.has(h.number))
+      const next = orderedHoles.find((h) => !doneNumbers.has(h.number))
       if (!next) {
         navigate(`/round/${r.id}/scorecard`)
         return
@@ -482,7 +490,7 @@ export function RoundActive() {
           </div>
 
           <BigButton onClick={finishHole} disabled={strokes === 0}>
-            {currentHole.number === holesList.length ? 'Finish round' : 'Next hole'}
+            {holesList[holesList.length - 1]?.number === currentHole.number ? 'Finish round' : 'Next hole'}
           </BigButton>
         </>
       )}

@@ -89,7 +89,7 @@ export async function fetchOsmGolfFeatures(
       nwr(around:${radiusMeters},${center.lat},${center.lng})["golf"];
       nwr(around:${radiusMeters},${center.lat},${center.lng})["leisure"="golf_course"];
     );
-    out geom;
+    out body geom;
   `
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',

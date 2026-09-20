@@ -56,6 +56,11 @@ export interface Round {
   teeId: string
   date: number
   completed: boolean
+  // Which hole numbers this round covers, in play order — e.g. all 18,
+  // just the front 9 ([1..9]), or just the back 9 ([10..18]). A course's
+  // own holeCount is how many holes physically exist there; this is what
+  // you're actually playing today.
+  holeNumbers: number[]
 }
 
 export interface HoleScore {

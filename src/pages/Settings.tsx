@@ -5,6 +5,14 @@ import { exportBackup, importBackup, getLastBackupAt } from '../db/backup'
 import { db } from '../db/db'
 import { COMMON_CLUBS } from '../lib/clubs'
 import { isMulliganEnabled, setMulliganEnabled } from '../lib/settings'
+import {
+  isDriveConfigured,
+  isDriveConnected,
+  connectDrive,
+  disconnectDrive,
+  pushBackupToDrive,
+  pullBackupFromDrive,
+} from '../lib/googleDrive'
 
 export function Settings() {
   const fileInput = useRef<HTMLInputElement>(null)
@@ -12,6 +20,9 @@ export function Settings() {
   const lastBackup = getLastBackupAt()
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
   const [mulliganEnabled, setMulliganEnabledState] = useState(isMulliganEnabled())
+  const [driveConnected, setDriveConnected] = useState(isDriveConnected())
+  const [driveBusy, setDriveBusy] = useState(false)
+  const [driveStatus, setDriveStatus] = useState<string | null>(null)
 
   async function handleExport() {
     await exportBackup()
@@ -45,6 +56,54 @@ export function Settings() {
     const next = !mulliganEnabled
     setMulliganEnabled(next)
     setMulliganEnabledState(next)
+  }
+
+  async function handleConnectDrive() {
+    setDriveBusy(true)
+    setDriveStatus(null)
+    try {
+      await connectDrive()
+      setDriveConnected(true)
+      setDriveStatus('Connected. Backing up now…')
+      await pushBackupToDrive()
+      setDriveStatus('Connected and backed up.')
+    } catch (err) {
+      setDriveStatus(err instanceof Error ? err.message : 'Could not connect to Google Drive.')
+    } finally {
+      setDriveBusy(false)
+    }
+  }
+
+  function handleDisconnectDrive() {
+    disconnectDrive()
+    setDriveConnected(false)
+    setDriveStatus('Disconnected. Local backups still work as before.')
+  }
+
+  async function handleBackupToDrive() {
+    setDriveBusy(true)
+    setDriveStatus(null)
+    try {
+      await pushBackupToDrive()
+      setDriveStatus('Backed up to Drive.')
+    } catch (err) {
+      setDriveStatus(err instanceof Error ? err.message : 'Backup to Drive failed.')
+    } finally {
+      setDriveBusy(false)
+    }
+  }
+
+  async function handlePullFromDrive() {
+    setDriveBusy(true)
+    setDriveStatus(null)
+    try {
+      const found = await pullBackupFromDrive(true)
+      setDriveStatus(found ? 'Pulled the latest backup from Drive.' : 'No backup found on Drive yet.')
+    } catch (err) {
+      setDriveStatus(err instanceof Error ? err.message : 'Pull from Drive failed.')
+    } finally {
+      setDriveBusy(false)
+    }
   }
 
   return (
@@ -132,6 +191,53 @@ export function Settings() {
           }}
         />
         {status && <p className="text-sm text-green-400">{status}</p>}
+      </div>
+
+      <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-3">
+        <div>
+          <div className="font-semibold text-white">Google Drive backup</div>
+          {isDriveConfigured() ? (
+            <p className="text-neutral-400 text-sm mt-1">
+              Stores one plain-text file in your Drive and keeps updating that same file — it
+              never creates extras. Pulls it automatically when you open the app, so a new
+              device picks up where you left off.
+            </p>
+          ) : (
+            <p className="text-neutral-400 text-sm mt-1">
+              Not set up for this build. Whoever deployed the app needs to create a free Google
+              OAuth Client ID and set it as <code>VITE_GOOGLE_CLIENT_ID</code> — see the README.
+            </p>
+          )}
+        </div>
+
+        {isDriveConfigured() && (
+          <>
+            {driveConnected ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <BigButton onClick={handleBackupToDrive} disabled={driveBusy}>
+                    Back up now
+                  </BigButton>
+                  <BigButton variant="secondary" onClick={handlePullFromDrive} disabled={driveBusy}>
+                    Pull latest
+                  </BigButton>
+                </div>
+                <button
+                  onClick={handleDisconnectDrive}
+                  disabled={driveBusy}
+                  className="text-neutral-500 text-sm underline"
+                >
+                  Disconnect Google Drive
+                </button>
+              </>
+            ) : (
+              <BigButton onClick={handleConnectDrive} disabled={driveBusy}>
+                {driveBusy ? 'Connecting…' : 'Connect Google Drive'}
+              </BigButton>
+            )}
+            {driveStatus && <p className="text-sm text-green-400">{driveStatus}</p>}
+          </>
+        )}
       </div>
     </div>
   )

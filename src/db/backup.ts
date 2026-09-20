@@ -3,7 +3,7 @@ import { db } from './db'
 const BACKUP_VERSION = 1
 const LAST_BACKUP_KEY = 'fairway:lastBackupAt'
 
-interface BackupFile {
+export interface BackupFile {
   version: number
   exportedAt: number
   courses: unknown[]
@@ -14,7 +14,9 @@ interface BackupFile {
   shots: unknown[]
 }
 
-export async function exportBackup(): Promise<void> {
+// Shared by the local file export and the Google Drive push (backup.ts and
+// googleDrive.ts both build the same payload shape).
+export async function buildBackupPayload(): Promise<BackupFile> {
   const [courses, tees, holes, rounds, holeScores, shots] = await Promise.all([
     db.courses.toArray(),
     db.tees.toArray(),
@@ -24,7 +26,7 @@ export async function exportBackup(): Promise<void> {
     db.shots.toArray(),
   ])
 
-  const payload: BackupFile = {
+  return {
     version: BACKUP_VERSION,
     exportedAt: Date.now(),
     courses,
@@ -34,6 +36,35 @@ export async function exportBackup(): Promise<void> {
     holeScores,
     shots,
   }
+}
+
+// Shared by the local file import and the Google Drive pull. bulkPut merges
+// by primary key rather than wiping existing data, so applying a partial or
+// older backup on top of a newer device is always safe — nothing here can
+// destroy local-only data, it can only add/overwrite matching records.
+export async function mergeBackupPayload(payload: BackupFile): Promise<void> {
+  if (payload.version !== BACKUP_VERSION) {
+    throw new Error(`Unsupported backup version: ${payload.version}`)
+  }
+
+  await db.transaction(
+    'rw',
+    [db.courses, db.tees, db.holes, db.rounds, db.holeScores, db.shots],
+    async () => {
+      await db.courses.bulkPut(payload.courses as never[])
+      await db.tees.bulkPut(payload.tees as never[])
+      await db.holes.bulkPut(payload.holes as never[])
+      await db.rounds.bulkPut(payload.rounds as never[])
+      await db.holeScores.bulkPut(payload.holeScores as never[])
+      await db.shots.bulkPut(payload.shots as never[])
+    },
+  )
+
+  localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()))
+}
+
+export async function exportBackup(): Promise<void> {
+  const payload = await buildBackupPayload()
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -50,27 +81,7 @@ export async function exportBackup(): Promise<void> {
 export async function importBackup(file: File): Promise<void> {
   const text = await file.text()
   const payload = JSON.parse(text) as BackupFile
-
-  if (payload.version !== BACKUP_VERSION) {
-    throw new Error(`Unsupported backup version: ${payload.version}`)
-  }
-
-  await db.transaction(
-    'rw',
-    [db.courses, db.tees, db.holes, db.rounds, db.holeScores, db.shots],
-    async () => {
-      // bulkPut merges by primary key rather than wiping existing data,
-      // so importing a partial/older backup on top of a newer device is safe.
-      await db.courses.bulkPut(payload.courses as never[])
-      await db.tees.bulkPut(payload.tees as never[])
-      await db.holes.bulkPut(payload.holes as never[])
-      await db.rounds.bulkPut(payload.rounds as never[])
-      await db.holeScores.bulkPut(payload.holeScores as never[])
-      await db.shots.bulkPut(payload.shots as never[])
-    },
-  )
-
-  localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()))
+  await mergeBackupPayload(payload)
 }
 
 export function getLastBackupAt(): number | null {

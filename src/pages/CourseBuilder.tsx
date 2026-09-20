@@ -292,8 +292,10 @@ export function CourseBuilder() {
       {step === 'confirm' && center && (
         <div className="flex flex-col gap-3">
           <p className="text-neutral-400 text-sm">
-            OpenStreetMap already has all {holeCount} holes mapped for this course. The amber
-            lines are what OSM traced for each hole — check that it looks right before using it.
+            OpenStreetMap already has all {holeCount} holes mapped for this course.{' '}
+            {holeOutlines.length > 0
+              ? 'The amber lines are what OSM traced for each hole — check that it looks right before using it.'
+              : "OSM only has a center point for each hole here, not a traced outline, so you'll just see numbered pins — check the numbering and positions look right."}
           </p>
           <div className="h-96 rounded-2xl overflow-hidden">
             <SatelliteMap center={center} pins={holePins} outlines={holeOutlines} />
