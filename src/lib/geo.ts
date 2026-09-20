@@ -117,6 +117,54 @@ export async function searchCourseLocation(query: string): Promise<GeocodeResult
   }))
 }
 
+export interface NearbyCourse {
+  name: string
+  point: LatLng
+  distanceMeters: number
+}
+
+// Finds named golf courses (leisure=golf_course areas/points) near a
+// location, sorted closest-first. Used for "use my location" so it offers
+// actual nearby courses to pick from instead of just centering the map on
+// wherever the phone's GPS happens to be standing (e.g. the parking lot).
+export async function fetchNearbyGolfCourses(center: LatLng, radiusMeters = 20_000): Promise<NearbyCourse[]> {
+  const query = `
+    [out:json][timeout:25];
+    nwr(around:${radiusMeters},${center.lat},${center.lng})["leisure"="golf_course"]["name"];
+    out center tags;
+  `
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: query,
+  })
+  if (!res.ok) return []
+
+  const data = (await res.json()) as {
+    elements: Array<{
+      tags?: Record<string, string>
+      lat?: number
+      lon?: number
+      center?: { lat: number; lon: number }
+    }>
+  }
+
+  const courses: NearbyCourse[] = []
+  for (const el of data.elements) {
+    const name = el.tags?.name
+    if (!name) continue
+    const pos = el.center
+      ? { lat: el.center.lat, lng: el.center.lon }
+      : el.lat !== undefined && el.lon !== undefined
+        ? { lat: el.lat, lng: el.lon }
+        : undefined
+    if (!pos) continue
+    courses.push({ name, point: pos, distanceMeters: distanceMeters(center, pos) })
+  }
+
+  courses.sort((a, b) => a.distanceMeters - b.distanceMeters)
+  return courses.slice(0, 3)
+}
+
 export interface OsmGolfFeature {
   type: 'hole' | 'tee' | 'green' | 'bunker' | 'water_hazard' | 'fairway'
   ref?: string // hole number, when tagged

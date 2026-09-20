@@ -7,6 +7,7 @@ import type { Hole, Tee } from '../db/schema'
 import {
   searchCourseLocation,
   fetchOsmGolfFeatures,
+  fetchNearbyGolfCourses,
   getCurrentPosition,
   type GeocodeResult,
   type OsmGolfFeature,
@@ -53,6 +54,8 @@ export function CourseBuilder() {
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [findingNearby, setFindingNearby] = useState(false)
+  const [nearbyNotice, setNearbyNotice] = useState<string | null>(null)
   const [center, setCenter] = useState<LatLng | null>(null)
   const [osmFeatures, setOsmFeatures] = useState<OsmGolfFeature[]>([])
   const [holes, setHoles] = useState<DraftHole[]>([])
@@ -144,8 +147,30 @@ export function CourseBuilder() {
   }
 
   async function useCurrentLocation() {
-    const pos = await getCurrentPosition()
-    await selectLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+    setFindingNearby(true)
+    setNearbyNotice(null)
+    try {
+      const pos = await getCurrentPosition()
+      const here = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+      const nearby = await fetchNearbyGolfCourses(here)
+      if (nearby.length > 0) {
+        setSearchResults(
+          nearby.map((c) => ({
+            // Comma-separated so the "pick a result" handler's
+            // displayName.split(',')[0] pulls out just the course name,
+            // matching how Nominatim's results are formatted.
+            displayName: `${c.name}, ${(c.distanceMeters / 1000).toFixed(1)} km away`,
+            lat: c.point.lat,
+            lng: c.point.lng,
+          })),
+        )
+      } else {
+        setNearbyNotice("No named courses found nearby on OpenStreetMap — using your exact location instead.")
+        await selectLocation(here)
+      }
+    } finally {
+      setFindingNearby(false)
+    }
   }
 
   function acceptAutoMap() {
@@ -330,9 +355,10 @@ export function CourseBuilder() {
           <BigButton onClick={handleSearch} disabled={searching}>
             {searching ? 'Searching…' : 'Search'}
           </BigButton>
-          <BigButton variant="secondary" onClick={useCurrentLocation}>
-            Use my current location
+          <BigButton variant="secondary" onClick={useCurrentLocation} disabled={findingNearby}>
+            {findingNearby ? 'Finding nearby courses…' : 'Use my current location'}
           </BigButton>
+          {nearbyNotice && <p className="text-amber-400 text-xs">{nearbyNotice}</p>}
 
           <div className="flex gap-2">
             {([9, 18] as const).map((n) => (
