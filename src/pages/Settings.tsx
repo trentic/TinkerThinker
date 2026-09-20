@@ -4,7 +4,12 @@ import { BigButton } from '../components/BigButton'
 import { exportBackup, importBackup, getLastBackupAt } from '../db/backup'
 import { db } from '../db/db'
 import { COMMON_CLUBS } from '../lib/clubs'
-import { isMulliganEnabled, setMulliganEnabled } from '../lib/settings'
+import {
+  isMulliganEnabled,
+  setMulliganEnabled,
+  isDebugLocationEnabled,
+  setDebugLocationEnabled,
+} from '../lib/settings'
 import {
   isDriveConfigured,
   isDriveConnected,
@@ -20,6 +25,7 @@ export function Settings() {
   const lastBackup = getLastBackupAt()
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
   const [mulliganEnabled, setMulliganEnabledState] = useState(isMulliganEnabled())
+  const [debugLocationEnabled, setDebugLocationEnabledState] = useState(isDebugLocationEnabled())
   const [driveConnected, setDriveConnected] = useState(isDriveConnected())
   const [driveBusy, setDriveBusy] = useState(false)
   const [driveStatus, setDriveStatus] = useState<string | null>(null)
@@ -56,6 +62,12 @@ export function Settings() {
     const next = !mulliganEnabled
     setMulliganEnabled(next)
     setMulliganEnabledState(next)
+  }
+
+  function toggleDebugLocation() {
+    const next = !debugLocationEnabled
+    setDebugLocationEnabled(next)
+    setDebugLocationEnabledState(next)
   }
 
   async function handleConnectDrive() {
@@ -238,6 +250,25 @@ export function Settings() {
             {driveStatus && <p className="text-sm text-green-400">{driveStatus}</p>}
           </>
         )}
+      </div>
+
+      <div className="bg-amber-950/40 border border-amber-800 rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold text-amber-200">🐛 Debug: simulate location</div>
+          <p className="text-amber-200/70 text-sm mt-1">
+            Testing only. Replaces real GPS everywhere in the app with a position you control
+            from a panel on the round screen — no need to actually be on a course. Turn this off
+            when you're done, or every round you start will use fake positions.
+          </p>
+        </div>
+        <button
+          onClick={toggleDebugLocation}
+          className={`min-h-10 px-4 rounded-full text-sm font-semibold shrink-0 ${
+            debugLocationEnabled ? 'bg-amber-600 text-white' : 'bg-neutral-800 text-neutral-400'
+          }`}
+        >
+          {debugLocationEnabled ? 'On' : 'Off'}
+        </button>
       </div>
     </div>
   )

@@ -6,7 +6,7 @@ import { Modal } from '../components/Modal'
 import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
 import type { Course, Hole, HoleScore, PenaltyType, Round, Tee } from '../db/schema'
-import { distanceYards, getCurrentPosition, type LatLng } from '../lib/geo'
+import { destinationPoint, distanceYards, getCurrentPosition, type LatLng } from '../lib/geo'
 import {
   calculatePlaysLike,
   getCurrentWind,
@@ -16,7 +16,8 @@ import {
   type WindInfo,
 } from '../lib/playsLike'
 import { COMMON_CLUBS } from '../lib/clubs'
-import { isMulliganEnabled } from '../lib/settings'
+import { isDebugLocationEnabled, isMulliganEnabled } from '../lib/settings'
+import { getMockPosition, setMockPosition } from '../lib/debugLocation'
 
 const PENALTY_LABELS: Record<PenaltyType, string> = {
   water: 'Water hazard',
@@ -68,6 +69,9 @@ export function RoundActive() {
   const [showMap, setShowMap] = useState(false)
   const touchStartX = useRef<number | null>(null)
   const mulliganEnabled = useMemo(() => isMulliganEnabled(), [])
+  const debugLocationEnabled = useMemo(() => isDebugLocationEnabled(), [])
+  const [showDebugPanel, setShowDebugPanel] = useState(false)
+  const [debugStepYards, setDebugStepYards] = useState(10)
 
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
   const clubChoices = useMemo(() => {
@@ -132,6 +136,16 @@ export function RoundActive() {
     setArmedClub(null)
     setPanel('shot')
     setShowMap(false)
+    // Debug mode: start each hole with the simulated position at this
+    // hole's tee, like you just walked up to it, instead of wherever
+    // testing left off on the previous hole.
+    if (debugLocationEnabled && currentHole) {
+      const seed = (tee && currentHole.teeCoords[tee.id]) || {
+        lat: currentHole.centerLat,
+        lng: currentHole.centerLng,
+      }
+      setMockPosition(seed)
+    }
     void refreshMyPosition()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentHoleNumber])
@@ -148,6 +162,17 @@ export function RoundActive() {
     } finally {
       setLocating(false)
     }
+  }
+
+  function moveDebugPosition(pos: LatLng) {
+    setMockPosition(pos)
+    setMyPos(pos)
+  }
+
+  function nudgeDebugPosition(bearingDeg: number, yards: number) {
+    const from = getMockPosition() ?? myPos
+    if (!from) return
+    moveDebugPosition(destinationPoint(from, bearingDeg, yards))
   }
 
   async function handleTapTarget(pos: LatLng) {
@@ -401,6 +426,91 @@ export function RoundActive() {
         </h1>
         <span className="text-neutral-400 text-sm">{tee.name} tees</span>
       </div>
+
+      {debugLocationEnabled && (
+        <div className="bg-amber-950/40 border border-amber-800 rounded-xl p-3 flex flex-col gap-3">
+          <button
+            onClick={() => setShowDebugPanel((v) => !v)}
+            className="flex items-center justify-between text-amber-200 text-sm font-semibold"
+          >
+            <span>
+              🐛 Simulated location
+              {myPos && ` · ${myPos.lat.toFixed(5)}, ${myPos.lng.toFixed(5)}`}
+            </span>
+            <span>{showDebugPanel ? '▲' : '▼'}</span>
+          </button>
+
+          {showDebugPanel && (
+            <div className="flex flex-col gap-3">
+              <div className="h-48 rounded-xl overflow-hidden">
+                <SatelliteMap
+                  center={myPos ?? mapCenter}
+                  pins={myPos ? [{ id: 'debug-me', position: myPos, label: '●', color: '#2563eb' }] : []}
+                  onMapClick={moveDebugPosition}
+                />
+              </div>
+              <p className="text-amber-200/70 text-xs">Tap the map to teleport there, or nudge:</p>
+
+              <div className="flex justify-center gap-2">
+                {[5, 10, 25].map((yards) => (
+                  <button
+                    key={yards}
+                    onClick={() => setDebugStepYards(yards)}
+                    className={`min-h-8 px-3 rounded-full text-xs font-medium ${
+                      debugStepYards === yards ? 'bg-amber-600 text-white' : 'bg-amber-900 text-amber-300'
+                    }`}
+                  >
+                    {yards}y
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 w-40 mx-auto">
+                <div />
+                <button
+                  onClick={() => nudgeDebugPosition(0, debugStepYards)}
+                  className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                >
+                  ▲
+                </button>
+                <div />
+                <button
+                  onClick={() => nudgeDebugPosition(270, debugStepYards)}
+                  className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                >
+                  ◀
+                </button>
+                <div />
+                <button
+                  onClick={() => nudgeDebugPosition(90, debugStepYards)}
+                  className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                >
+                  ▶
+                </button>
+                <div />
+                <button
+                  onClick={() => nudgeDebugPosition(180, debugStepYards)}
+                  className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                >
+                  ▼
+                </button>
+                <div />
+              </div>
+
+              <BigButton
+                variant="secondary"
+                onClick={() =>
+                  moveDebugPosition(
+                    currentHole.teeCoords[tee.id] ?? { lat: currentHole.centerLat, lng: currentHole.centerLng },
+                  )
+                }
+              >
+                Reset to tee
+              </BigButton>
+            </div>
+          )}
+        </div>
+      )}
 
       {showMap ? (
         // Range-reading screen: brought up deliberately, one big button to leave it.

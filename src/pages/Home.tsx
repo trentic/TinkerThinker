@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal'
 import { daysSinceLastBackup } from '../db/backup'
 import { checkCourseDeletable, deleteCourseCascade } from '../db/courseActions'
 import { computeCourseSummary, type CourseSummary } from '../lib/courseStats'
+import { isDebugLocationEnabled } from '../lib/settings'
 
 type HoleSelection = 'all18' | 'front9' | 'back9'
 
@@ -108,6 +109,16 @@ export function Home() {
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
       <h1 className="text-2xl font-bold text-white mt-2">Fairway</h1>
+
+      {isDebugLocationEnabled() && (
+        <Link
+          to="/settings"
+          className="bg-amber-950/40 border border-amber-800 rounded-xl p-3 text-amber-200 text-sm"
+        >
+          🐛 Debug location is on — real rounds will use a simulated GPS position. Tap to turn it
+          off in Settings.
+        </Link>
+      )}
 
       {resumeRound && (
         <Link

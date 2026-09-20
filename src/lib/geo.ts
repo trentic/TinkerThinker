@@ -1,3 +1,5 @@
+import { readMockPositionIfDebugging } from './debugLocation'
+
 export interface LatLng {
   lat: number
   lng: number
@@ -22,7 +24,56 @@ export function distanceYards(a: LatLng, b: LatLng): number {
   return distanceMeters(a, b) / METERS_PER_YARD
 }
 
+/** Walks `distanceYards` from `start` along `bearingDeg` (0 = north, 90 = east). */
+export function destinationPoint(start: LatLng, bearingDeg: number, distanceYards: number): LatLng {
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const toDeg = (r: number) => (r * 180) / Math.PI
+  const angularDist = (distanceYards * METERS_PER_YARD) / EARTH_RADIUS_M
+  const bearing = toRad(bearingDeg)
+  const lat1 = toRad(start.lat)
+  const lng1 = toRad(start.lng)
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDist) + Math.cos(lat1) * Math.sin(angularDist) * Math.cos(bearing),
+  )
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(bearing) * Math.sin(angularDist) * Math.cos(lat1),
+      Math.cos(angularDist) - Math.sin(lat1) * Math.sin(lat2),
+    )
+
+  return { lat: toDeg(lat2), lng: toDeg(lng2) }
+}
+
+function fakeGeolocationPosition(pos: LatLng): GeolocationPosition {
+  const coords: GeolocationCoordinates = {
+    latitude: pos.lat,
+    longitude: pos.lng,
+    accuracy: 5,
+    altitude: null,
+    altitudeAccuracy: null,
+    heading: null,
+    speed: null,
+    toJSON() {
+      return this
+    },
+  }
+  return {
+    coords,
+    timestamp: Date.now(),
+    toJSON() {
+      return this
+    },
+  }
+}
+
 export function getCurrentPosition(options?: PositionOptions): Promise<GeolocationPosition> {
+  // Testing-only mock GPS (see lib/debugLocation.ts) — deliberately checked
+  // before touching real geolocation at all.
+  const mock = readMockPositionIfDebugging()
+  if (mock) return Promise.resolve(fakeGeolocationPosition(mock))
+
   return new Promise((resolve, reject) => {
     if (!('geolocation' in navigator)) {
       reject(new Error('Geolocation is not available on this device/browser.'))
