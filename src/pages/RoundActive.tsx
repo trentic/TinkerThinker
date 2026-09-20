@@ -54,6 +54,7 @@ export function RoundActive() {
   const [panel, setPanel] = useState<Panel>('shot')
   const [armedClub, setArmedClub] = useState<string | null>(null)
   const touchStartX = useRef<number | null>(null)
+  const mapAreaRef = useRef<HTMLDivElement>(null)
   const mulliganEnabled = useMemo(() => isMulliganEnabled(), [])
 
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
@@ -311,6 +312,13 @@ export function RoundActive() {
   }
 
   function onTouchStart(e: TouchEvent) {
+    // The satellite map has its own pan/zoom touch handling — don't treat a
+    // drag that starts on the map as a panel swipe, or panning the map would
+    // randomly flip to the clubs panel.
+    if (mapAreaRef.current?.contains(e.target as Node)) {
+      touchStartX.current = null
+      return
+    }
     touchStartX.current = e.touches[0].clientX
   }
 
@@ -372,7 +380,7 @@ export function RoundActive() {
 
             {!puttMode ? (
               <>
-                <div className="h-72 rounded-2xl overflow-hidden relative">
+                <div ref={mapAreaRef} className="h-72 rounded-2xl overflow-hidden relative">
                   <SatelliteMap center={mapCenter} pins={pins} onMapClick={(pos) => void handleTapTarget(pos)} />
                   {locating && (
                     <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
