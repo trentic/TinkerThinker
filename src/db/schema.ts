@@ -36,6 +36,9 @@ export interface Hole {
   // Rough center, captured during the tap-through course-builder step.
   centerLat: number
   centerLng: number
+  // Only present when OpenStreetMap had a complete, numbered hole outline
+  // to auto-map from — never fabricated for a manually-tapped hole.
+  outline?: { lat: number; lng: number }[]
   // Precise tee/green coordinates, filled in progressively the first time
   // a user actually plays the hole (see round flow). Keyed by Tee.id.
   teeCoords: Record<string, { lat: number; lng: number }>

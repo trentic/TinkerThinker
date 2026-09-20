@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BigButton } from '../components/BigButton'
-import { SatelliteMap, type MapPin } from '../components/SatelliteMap'
+import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
 import type { Hole, Tee } from '../db/schema'
 import {
@@ -12,9 +12,10 @@ import {
   type OsmGolfFeature,
   type LatLng,
 } from '../lib/geo'
+import { tryAutoMapHoles } from '../lib/courseAutoMap'
 import { runScorecardOcr, type OcrDraftRow } from '../lib/scorecardOcr'
 
-type Step = 'locate' | 'map' | 'tees' | 'review'
+type Step = 'locate' | 'checking' | 'confirm' | 'map' | 'tees' | 'review'
 
 const TEE_PRESETS = [
   { name: 'Black', color: '#111827' },
@@ -28,6 +29,7 @@ interface DraftHole {
   number: number
   centerLat: number
   centerLng: number
+  outline?: LatLng[]
   par: number
   strokeIndex?: number
   yardageByTee: Record<string, number>
@@ -55,6 +57,7 @@ export function CourseBuilder() {
   const [ocrBusy, setOcrBusy] = useState(false)
   const [ocrRows, setOcrRows] = useState<OcrDraftRow[] | null>(null)
   const [saving, setSaving] = useState(false)
+  const [usedAutoMap, setUsedAutoMap] = useState(false)
 
   async function handleSearch() {
     if (!query.trim()) return
@@ -69,15 +72,48 @@ export function CourseBuilder() {
   async function selectLocation(pos: LatLng, name?: string) {
     setCenter(pos)
     if (name) setCourseName(name)
-    setStep('map')
-    fetchOsmGolfFeatures(pos)
-      .then(setOsmFeatures)
-      .catch(() => setOsmFeatures([]))
+    setStep('checking')
+    try {
+      const features = await fetchOsmGolfFeatures(pos)
+      setOsmFeatures(features)
+      const auto = tryAutoMapHoles(features, holeCount)
+      if (auto) {
+        setHoles(
+          auto.map((h) => ({
+            number: h.number,
+            centerLat: h.center.lat,
+            centerLng: h.center.lng,
+            outline: h.outline,
+            par: h.par ?? 4,
+            yardageByTee: {},
+          })),
+        )
+        setStep('confirm')
+      } else {
+        setHoles([])
+        setStep('map')
+      }
+    } catch {
+      setOsmFeatures([])
+      setHoles([])
+      setStep('map')
+    }
   }
 
   async function useCurrentLocation() {
     const pos = await getCurrentPosition()
     await selectLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+  }
+
+  function acceptAutoMap() {
+    setUsedAutoMap(true)
+    setStep('tees')
+  }
+
+  function rejectAutoMap() {
+    setUsedAutoMap(false)
+    setHoles([])
+    setStep('map')
   }
 
   function addHoleTap(pos: LatLng) {
@@ -151,7 +187,7 @@ export function CourseBuilder() {
         centerLat: center.lat,
         centerLng: center.lng,
         holeCount,
-        source: osmFeatures.length > 0 ? 'mixed' : 'manual',
+        source: usedAutoMap ? 'osm' : osmFeatures.length > 0 ? 'mixed' : 'manual',
         createdAt: Date.now(),
       })
 
@@ -172,6 +208,7 @@ export function CourseBuilder() {
         strokeIndex: h.strokeIndex,
         centerLat: h.centerLat,
         centerLng: h.centerLng,
+        outline: h.outline,
         teeCoords: {},
         yardageByTee: h.yardageByTee,
       }))
@@ -189,11 +226,14 @@ export function CourseBuilder() {
     label: String(h.number),
     color: '#16a34a',
   }))
+  const holeOutlines: MapOutline[] = holes
+    .filter((h): h is DraftHole & { outline: LatLng[] } => !!h.outline)
+    .map((h) => ({ id: `outline-${h.number}`, coordinates: h.outline, color: '#f59e0b' }))
   const osmPins: MapPin[] = osmFeatures
     .filter((f) => f.type === 'hole' || f.type === 'green' || f.type === 'tee')
     .map((f, i) => ({
       id: `osm-${i}`,
-      position: { lat: f.lat, lng: f.lng },
+      position: f.point,
       label: f.ref ?? '·',
       color: '#6b7280',
     }))
@@ -240,6 +280,28 @@ export function CourseBuilder() {
               {r.displayName}
             </button>
           ))}
+        </div>
+      )}
+
+      {step === 'checking' && (
+        <div className="flex flex-col items-center gap-3 py-16 text-center">
+          <p className="text-neutral-400 text-sm">Checking OpenStreetMap for this course…</p>
+        </div>
+      )}
+
+      {step === 'confirm' && center && (
+        <div className="flex flex-col gap-3">
+          <p className="text-neutral-400 text-sm">
+            OpenStreetMap already has all {holeCount} holes mapped for this course. The amber
+            lines are what OSM traced for each hole — check that it looks right before using it.
+          </p>
+          <div className="h-96 rounded-2xl overflow-hidden">
+            <SatelliteMap center={center} pins={holePins} outlines={holeOutlines} />
+          </div>
+          <BigButton onClick={acceptAutoMap}>Looks right → tee boxes</BigButton>
+          <BigButton variant="secondary" onClick={rejectAutoMap}>
+            Incorrect? Tap here to map manually
+          </BigButton>
         </div>
       )}
 

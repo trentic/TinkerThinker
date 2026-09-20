@@ -5,8 +5,10 @@ import {
   NavigationControl,
   type StyleSpecification,
   type MapMouseEvent,
+  type GeoJSONSource,
 } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import type { FeatureCollection } from 'geojson'
 import type { LatLng } from '../lib/geo'
 
 // Esri World Imagery: free satellite tiles, no API key/signup required for
@@ -33,15 +35,31 @@ export interface MapPin {
   color?: string
 }
 
+export interface MapOutline {
+  id: string
+  coordinates: LatLng[]
+  color?: string
+}
+
 interface SatelliteMapProps {
   center: LatLng
   zoom?: number
   pins?: MapPin[]
+  outlines?: MapOutline[]
   onMapClick?: (pos: LatLng) => void
   className?: string
 }
 
-export function SatelliteMap({ center, zoom = 17, pins = [], onMapClick, className = '' }: SatelliteMapProps) {
+const OUTLINES_SOURCE_ID = 'fairway-outlines'
+
+export function SatelliteMap({
+  center,
+  zoom = 17,
+  pins = [],
+  outlines = [],
+  onMapClick,
+  className = '',
+}: SatelliteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MLMap | null>(null)
   const markersRef = useRef<Marker[]>([])
@@ -66,10 +84,14 @@ export function SatelliteMap({ center, zoom = 17, pins = [], onMapClick, classNa
       map.remove()
       mapRef.current = null
     }
-    // Map is only created once; center/zoom changes after mount are handled
-    // by flyTo in a separate effect so we don't tear down the map on every pan.
+    // Map is only created once; center changes after mount are handled below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Recenter (e.g. moving to the next hole) without tearing down the map.
+  useEffect(() => {
+    mapRef.current?.setCenter([center.lng, center.lat])
+  }, [center.lat, center.lng])
 
   useEffect(() => {
     markersRef.current.forEach((m) => m.remove())
@@ -92,6 +114,46 @@ export function SatelliteMap({ center, zoom = 17, pins = [], onMapClick, classNa
       markersRef.current.push(marker)
     }
   }, [pins])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const applyOutlines = () => {
+      const geojson: FeatureCollection = {
+        type: 'FeatureCollection',
+        features: outlines.map((o) => ({
+          type: 'Feature',
+          properties: { color: o.color ?? '#f59e0b' },
+          geometry: {
+            type: 'LineString',
+            coordinates: o.coordinates.map((p) => [p.lng, p.lat]),
+          },
+        })),
+      }
+
+      const existing = map.getSource(OUTLINES_SOURCE_ID) as GeoJSONSource | undefined
+      if (existing) {
+        existing.setData(geojson)
+        return
+      }
+      map.addSource(OUTLINES_SOURCE_ID, { type: 'geojson', data: geojson })
+      map.addLayer({
+        id: OUTLINES_SOURCE_ID,
+        type: 'line',
+        source: OUTLINES_SOURCE_ID,
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': 3,
+          'line-opacity': 0.9,
+        },
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+      })
+    }
+
+    if (map.isStyleLoaded()) applyOutlines()
+    else map.once('load', applyOutlines)
+  }, [outlines])
 
   return <div ref={containerRef} className={`w-full h-full ${className}`} />
 }

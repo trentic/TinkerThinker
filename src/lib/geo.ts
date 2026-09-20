@@ -70,13 +70,15 @@ export interface OsmGolfFeature {
   type: 'hole' | 'tee' | 'green' | 'bunker' | 'water_hazard' | 'fairway'
   ref?: string // hole number, when tagged
   par?: number
-  lat: number
-  lng: number
+  point: LatLng // representative point (a node's own position, or a way's centroid)
+  outline?: LatLng[] // full way geometry, when this feature is a line/area rather than a point
 }
 
-// Pulls whatever golf-tagged features Overpass/OSM has near a course center.
-// Coverage varies wildly by course — this is a best-effort pre-fill, not a
-// guaranteed source. The tap-through hole builder is the reliable fallback.
+// Pulls whatever golf-tagged features Overpass/OSM has near a course center,
+// including full way geometry (so hole/fairway outlines can be drawn, not
+// just a center dot). Coverage varies wildly by course — this is a
+// best-effort pre-fill, not a guaranteed source. The tap-through hole
+// builder is the reliable fallback.
 export async function fetchOsmGolfFeatures(
   center: LatLng,
   radiusMeters = 1200,
@@ -87,7 +89,7 @@ export async function fetchOsmGolfFeatures(
       nwr(around:${radiusMeters},${center.lat},${center.lng})["golf"];
       nwr(around:${radiusMeters},${center.lat},${center.lng})["leisure"="golf_course"];
     );
-    out center tags;
+    out geom;
   `
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
@@ -101,35 +103,42 @@ export async function fetchOsmGolfFeatures(
       lat?: number
       lon?: number
       center?: { lat: number; lon: number }
+      geometry?: Array<{ lat: number; lon: number }>
     }>
+  }
+
+  const typeMap: Record<string, OsmGolfFeature['type']> = {
+    hole: 'hole',
+    tee: 'tee',
+    green: 'green',
+    bunker: 'bunker',
+    water_hazard: 'water_hazard',
+    fairway: 'fairway',
   }
 
   const features: OsmGolfFeature[] = []
   for (const el of data.elements) {
     const tags = el.tags ?? {}
-    const golfTag = tags.golf
-    if (!golfTag) continue
-    const pos = el.center ?? (el.lat && el.lon ? { lat: el.lat, lon: el.lon } : undefined)
-    if (!pos) continue
-
-    const typeMap: Record<string, OsmGolfFeature['type']> = {
-      hole: 'hole',
-      tee: 'tee',
-      green: 'green',
-      bunker: 'bunker',
-      water_hazard: 'water_hazard',
-      fairway: 'fairway',
-    }
-    const type = typeMap[golfTag]
+    const type = typeMap[tags.golf]
     if (!type) continue
 
-    features.push({
-      type,
-      ref: tags.ref,
-      par: tags.par ? Number(tags.par) : undefined,
-      lat: pos.lat,
-      lng: pos.lon,
-    })
+    if (el.geometry && el.geometry.length > 0) {
+      const outline = el.geometry.map((g) => ({ lat: g.lat, lng: g.lon }))
+      const centroid = outline.reduce(
+        (sum, p) => ({ lat: sum.lat + p.lat / outline.length, lng: sum.lng + p.lng / outline.length }),
+        { lat: 0, lng: 0 },
+      )
+      features.push({ type, ref: tags.ref, par: tags.par ? Number(tags.par) : undefined, point: centroid, outline })
+      continue
+    }
+
+    const center = el.center
+      ? { lat: el.center.lat, lng: el.center.lon }
+      : el.lat !== undefined && el.lon !== undefined
+        ? { lat: el.lat, lng: el.lon }
+        : undefined
+    if (!center) continue
+    features.push({ type, ref: tags.ref, par: tags.par ? Number(tags.par) : undefined, point: center })
   }
   return features
 }

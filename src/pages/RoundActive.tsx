@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type TouchEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { BigButton } from '../components/BigButton'
-import { SatelliteMap, type MapPin } from '../components/SatelliteMap'
+import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
 import type { Course, Hole, HoleScore, PenaltyType, Round, Tee } from '../db/schema'
 import { distanceYards, getCurrentPosition, type LatLng } from '../lib/geo'
@@ -337,6 +337,9 @@ export function RoundActive() {
   }
   if (myPos) pins.push({ id: 'me', position: myPos, label: '●', color: '#2563eb' })
   if (target) pins.push({ id: 'target', position: target, label: '🎯', color: '#dc2626' })
+  const outlines: MapOutline[] = currentHole.outline
+    ? [{ id: 'hole-outline', coordinates: currentHole.outline, color: '#f59e0b' }]
+    : []
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-3 pb-24">
@@ -356,7 +359,12 @@ export function RoundActive() {
             ‹ Back
           </BigButton>
           <div className="h-[55vh] rounded-2xl overflow-hidden relative">
-            <SatelliteMap center={mapCenter} pins={pins} onMapClick={(pos) => void handleTapTarget(pos)} />
+            <SatelliteMap
+              center={mapCenter}
+              pins={pins}
+              outlines={outlines}
+              onMapClick={(pos) => void handleTapTarget(pos)}
+            />
             {locating && (
               <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
                 Locating…
