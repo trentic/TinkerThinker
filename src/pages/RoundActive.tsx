@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { BigButton } from '../components/BigButton'
 import { Modal } from '../components/Modal'
+import { HoleScoreTable } from '../components/HoleScoreTable'
 import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
 import type { Course, Hole, HoleScore, PenaltyType, Round, Tee } from '../db/schema'
@@ -18,6 +19,7 @@ import {
 import { COMMON_CLUBS } from '../lib/clubs'
 import { isDebugLocationEnabled, isMulliganEnabled } from '../lib/settings'
 import { getMockPosition, setMockPosition } from '../lib/debugLocation'
+import { toParLabel } from '../lib/format'
 
 const PENALTY_LABELS: Record<PenaltyType, string> = {
   water: 'Water hazard',
@@ -72,6 +74,12 @@ export function RoundActive() {
   const debugLocationEnabled = useMemo(() => isDebugLocationEnabled(), [])
   const [showDebugPanel, setShowDebugPanel] = useState(false)
   const [debugStepYards, setDebugStepYards] = useState(10)
+
+  // Shown between holes: a running scorecard plus a deliberately-delayed
+  // button to confirm arrival at the next tee (see finishHole/confirmAtNextTee).
+  const [holeSummary, setHoleSummary] = useState<{ nextHole: Hole; allScores: HoleScore[] } | null>(null)
+  const [nextTeeCooldown, setNextTeeCooldown] = useState(0)
+  const [capturingNextTee, setCapturingNextTee] = useState(false)
 
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
   const clubChoices = useMemo(() => {
@@ -150,6 +158,14 @@ export function RoundActive() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentHoleNumber])
 
+  // Ticks the "I'm At The Next Tee" cooldown down once a second while the
+  // hole-transition summary is showing.
+  useEffect(() => {
+    if (!holeSummary || nextTeeCooldown <= 0) return
+    const t = setTimeout(() => setNextTeeCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [holeSummary, nextTeeCooldown])
+
   async function refreshMyPosition(): Promise<LatLng | null> {
     setLocating(true)
     try {
@@ -162,6 +178,22 @@ export function RoundActive() {
     } finally {
       setLocating(false)
     }
+  }
+
+  async function setHoleTeeCoordinate(hole: Hole, teeId: string, pos: LatLng) {
+    const updatedCoords = { ...hole.teeCoords, [teeId]: pos }
+    await db.holes.update(hole.id, { teeCoords: updatedCoords })
+    setHolesList((prev) => prev.map((h) => (h.id === hole.id ? { ...h, teeCoords: updatedCoords } : h)))
+  }
+
+  // Explicit, deliberate tee capture — only offered before the first stroke.
+  // Replaces the old implicit "grab GPS whenever yardage is first checked"
+  // behavior, which could fire from wherever the golfer happened to be
+  // standing rather than the tee itself.
+  async function handleSetTee() {
+    if (!currentHole || !tee) return
+    const pos = await refreshMyPosition()
+    if (pos) await setHoleTeeCoordinate(currentHole, tee.id, pos)
   }
 
   function moveDebugPosition(pos: LatLng) {
@@ -182,16 +214,6 @@ export function RoundActive() {
     try {
       const origin = (await refreshMyPosition()) ?? myPos
       if (!origin) return
-
-      // First look at the tee: lock in this tee's precise coordinates for
-      // future rounds, captured from the golfer actually standing there.
-      if (currentHole && strokes === 0 && !currentHole.teeCoords[tee.id]) {
-        const updatedCoords = { ...currentHole.teeCoords, [tee.id]: origin }
-        await db.holes.update(currentHole.id, { teeCoords: updatedCoords })
-        setHolesList((prev) =>
-          prev.map((h) => (h.id === currentHole.id ? { ...h, teeCoords: updatedCoords } : h)),
-        )
-      }
 
       const [elevations, wind] = await Promise.all([
         getElevationMeters([origin, pos]),
@@ -384,8 +406,25 @@ export function RoundActive() {
     if (!next) {
       await db.rounds.update(round.id, { completed: true })
       navigate(`/round/${round.id}/scorecard`)
-    } else {
-      setCurrentHoleNumber(next.number)
+      return
+    }
+
+    const allScores = await db.holeScores.where('roundId').equals(round.id).toArray()
+    setHoleSummary({ nextHole: next, allScores })
+    setNextTeeCooldown(5)
+  }
+
+  async function confirmAtNextTee() {
+    if (!holeSummary || nextTeeCooldown > 0 || !tee) return
+    setCapturingNextTee(true)
+    try {
+      const pos = await refreshMyPosition()
+      if (pos) await setHoleTeeCoordinate(holeSummary.nextHole, tee.id, pos)
+      const nextNumber = holeSummary.nextHole.number
+      setHoleSummary(null)
+      setCurrentHoleNumber(nextNumber)
+    } finally {
+      setCapturingNextTee(false)
     }
   }
 
@@ -405,12 +444,25 @@ export function RoundActive() {
     return <div className="p-4 text-neutral-500">Loading round…</div>
   }
 
-  const mapCenter = currentHole.teeCoords[tee.id] ?? { lat: currentHole.centerLat, lng: currentHole.centerLng }
+  const mapCenter = currentHole.teeCoords[tee.id] ?? {
+    lat: currentHole.centerLat,
+    lng: currentHole.centerLng,
+  }
   const pins: MapPin[] = [
-    { id: 'hole', position: { lat: currentHole.centerLat, lng: currentHole.centerLng }, label: 'C', color: '#6b7280' },
+    {
+      id: 'hole',
+      position: { lat: currentHole.centerLat, lng: currentHole.centerLng },
+      label: 'C',
+      color: '#6b7280',
+    },
   ]
   if (currentHole.greenLat && currentHole.greenLng) {
-    pins.push({ id: 'green', position: { lat: currentHole.greenLat, lng: currentHole.greenLng }, label: '⛳', color: '#16a34a' })
+    pins.push({
+      id: 'green',
+      position: { lat: currentHole.greenLat, lng: currentHole.greenLng },
+      label: '⛳',
+      color: '#16a34a',
+    })
   }
   if (myPos) pins.push({ id: 'me', position: myPos, label: '●', color: '#2563eb' })
   if (target) pins.push({ id: 'target', position: target, label: '🎯', color: '#dc2626' })
@@ -427,233 +479,268 @@ export function RoundActive() {
         <span className="text-neutral-400 text-sm">{tee.name} tees</span>
       </div>
 
-      {debugLocationEnabled && (
-        <div className="bg-amber-950/40 border border-amber-800 rounded-xl p-3 flex flex-col gap-3">
-          <button
-            onClick={() => setShowDebugPanel((v) => !v)}
-            className="flex items-center justify-between text-amber-200 text-sm font-semibold"
-          >
-            <span>
-              🐛 Simulated location
-              {myPos && ` · ${myPos.lat.toFixed(5)}, ${myPos.lng.toFixed(5)}`}
-            </span>
-            <span>{showDebugPanel ? '▲' : '▼'}</span>
-          </button>
-
-          {showDebugPanel && (
-            <div className="flex flex-col gap-3">
-              <div className="h-48 rounded-xl overflow-hidden">
-                <SatelliteMap
-                  center={myPos ?? mapCenter}
-                  pins={myPos ? [{ id: 'debug-me', position: myPos, label: '●', color: '#2563eb' }] : []}
-                  onMapClick={moveDebugPosition}
-                />
-              </div>
-              <p className="text-amber-200/70 text-xs">Tap the map to teleport there, or nudge:</p>
-
-              <div className="flex justify-center gap-2">
-                {[5, 10, 25].map((yards) => (
-                  <button
-                    key={yards}
-                    onClick={() => setDebugStepYards(yards)}
-                    className={`min-h-8 px-3 rounded-full text-xs font-medium ${
-                      debugStepYards === yards ? 'bg-amber-600 text-white' : 'bg-amber-900 text-amber-300'
-                    }`}
-                  >
-                    {yards}y
-                  </button>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 w-40 mx-auto">
-                <div />
-                <button
-                  onClick={() => nudgeDebugPosition(0, debugStepYards)}
-                  className="bg-amber-800 text-white rounded-lg py-3 text-lg"
-                >
-                  ▲
-                </button>
-                <div />
-                <button
-                  onClick={() => nudgeDebugPosition(270, debugStepYards)}
-                  className="bg-amber-800 text-white rounded-lg py-3 text-lg"
-                >
-                  ◀
-                </button>
-                <div />
-                <button
-                  onClick={() => nudgeDebugPosition(90, debugStepYards)}
-                  className="bg-amber-800 text-white rounded-lg py-3 text-lg"
-                >
-                  ▶
-                </button>
-                <div />
-                <button
-                  onClick={() => nudgeDebugPosition(180, debugStepYards)}
-                  className="bg-amber-800 text-white rounded-lg py-3 text-lg"
-                >
-                  ▼
-                </button>
-                <div />
-              </div>
-
-              <BigButton
-                variant="secondary"
-                onClick={() =>
-                  moveDebugPosition(
-                    currentHole.teeCoords[tee.id] ?? { lat: currentHole.centerLat, lng: currentHole.centerLng },
-                  )
-                }
-              >
-                Reset to tee
-              </BigButton>
-            </div>
-          )}
-        </div>
-      )}
-
-      {showMap ? (
-        // Range-reading screen: brought up deliberately, one big button to leave it.
-        // Everything else (strokes, finish, drive-mode buttons) is hidden while here
-        // so the map doesn't compete with them for attention.
+      {holeSummary ? (
         <div className="flex flex-col gap-3">
-          <BigButton variant="secondary" onClick={() => setShowMap(false)}>
-            ‹ Back
-          </BigButton>
-          <div className="h-[55vh] rounded-2xl overflow-hidden relative">
-            <SatelliteMap
-              center={mapCenter}
-              pins={pins}
-              outlines={outlines}
-              onMapClick={(pos) => void handleTapTarget(pos)}
-            />
-            {locating && (
-              <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                Locating…
-              </div>
-            )}
-          </div>
-          <p className="text-neutral-500 text-xs -mt-1">Tap where you're aiming.</p>
-
-          {yardageLoading && <div className="text-neutral-400 text-sm">Calculating plays-like yardage…</div>}
-          {playsLike && !yardageLoading && (
-            <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-1">
-              <div className="text-3xl font-bold text-white">{playsLike.playsLikeYards} yd plays like</div>
-              <div className="text-neutral-500 text-sm">
-                {playsLike.actualYards} yd straight ·{' '}
-                {playsLike.elevationAdjustYards >= 0 ? '+' : ''}
-                {playsLike.elevationAdjustYards} elevation ·{' '}
-                {playsLike.windAdjustYards >= 0 ? '+' : ''}
-                {playsLike.windAdjustYards} wind
-              </div>
-              {wind && (
-                <div className="text-neutral-500 text-sm">
-                  💨 {Math.round(wind.speedMph)} mph from {windCompassLabel(wind.directionDeg)}
-                </div>
-              )}
-              <div className="text-neutral-600 text-xs">Estimate — not laser-precision.</div>
+          <div className="bg-neutral-900 rounded-2xl p-4 text-center">
+            <div className="text-neutral-400 text-sm">Hole {currentHole.number} complete</div>
+            <div className="text-3xl font-bold text-white mt-1">
+              {strokes} ({toParLabel(strokes - currentHole.par)})
             </div>
-          )}
+          </div>
+
+          <HoleScoreTable scores={holeSummary.allScores} />
+
+          <div className="flex justify-end">
+            <BigButton onClick={confirmAtNextTee} disabled={nextTeeCooldown > 0 || capturingNextTee}>
+              {capturingNextTee
+                ? 'Setting tee…'
+                : nextTeeCooldown > 0
+                  ? `I'm At The Next Tee (${nextTeeCooldown})`
+                  : "I'm At The Next Tee"}
+            </BigButton>
+          </div>
         </div>
       ) : (
         <>
-          <div className="overflow-hidden">
-            <div
-              className="flex transition-transform duration-200 ease-out"
-              style={{ width: '200%', transform: panel === 'clubs' ? 'translateX(-50%)' : 'translateX(0%)' }}
-              onTouchStart={onTouchStart}
-              onTouchEnd={onTouchEnd}
-            >
-              {/* Drive-mode pane: big buttons only, no map */}
-              <div className="w-1/2 pr-1 flex flex-col gap-3">
-                <button
-                  onClick={() => setPanel('clubs')}
-                  className="self-end text-neutral-400 text-sm underline"
-                >
-                  🏌️ My bag ›
-                </button>
+          {debugLocationEnabled && (
+            <div className="bg-amber-950/40 border border-amber-800 rounded-xl p-3 flex flex-col gap-3">
+              <button
+                onClick={() => setShowDebugPanel((v) => !v)}
+                className="flex items-center justify-between text-amber-200 text-sm font-semibold"
+              >
+                <span>
+                  🐛 Simulated location
+                  {myPos && ` · ${myPos.lat.toFixed(5)}, ${myPos.lng.toFixed(5)}`}
+                </span>
+                <span>{showDebugPanel ? '▲' : '▼'}</span>
+              </button>
 
-                {armedClub && (
-                  <div className="flex items-center justify-between bg-green-900/40 border border-green-700 rounded-xl px-3 py-2">
-                    <span className="text-green-300 text-sm font-medium">Using {armedClub}</span>
-                    <button onClick={() => setArmedClub(null)} className="text-green-400 text-xs underline">
-                      Clear
+              {showDebugPanel && (
+                <div className="flex flex-col gap-3">
+                  <div className="h-48 rounded-xl overflow-hidden">
+                    <SatelliteMap
+                      center={myPos ?? mapCenter}
+                      pins={myPos ? [{ id: 'debug-me', position: myPos, label: '●', color: '#2563eb' }] : []}
+                      onMapClick={moveDebugPosition}
+                    />
+                  </div>
+                  <p className="text-amber-200/70 text-xs">Tap the map to teleport there, or nudge:</p>
+
+                  <div className="flex justify-center gap-2">
+                    {[5, 10, 25].map((yards) => (
+                      <button
+                        key={yards}
+                        onClick={() => setDebugStepYards(yards)}
+                        className={`min-h-8 px-3 rounded-full text-xs font-medium ${
+                          debugStepYards === yards ? 'bg-amber-600 text-white' : 'bg-amber-900 text-amber-300'
+                        }`}
+                      >
+                        {yards}y
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 w-40 mx-auto">
+                    <div />
+                    <button
+                      onClick={() => nudgeDebugPosition(0, debugStepYards)}
+                      className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                    >
+                      ▲
                     </button>
+                    <div />
+                    <button
+                      onClick={() => nudgeDebugPosition(270, debugStepYards)}
+                      className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                    >
+                      ◀
+                    </button>
+                    <div />
+                    <button
+                      onClick={() => nudgeDebugPosition(90, debugStepYards)}
+                      className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                    >
+                      ▶
+                    </button>
+                    <div />
+                    <button
+                      onClick={() => nudgeDebugPosition(180, debugStepYards)}
+                      className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                    >
+                      ▼
+                    </button>
+                    <div />
                   </div>
-                )}
 
-                {!puttMode ? (
-                  <>
-                    <BigButton variant="secondary" onClick={() => setShowMap(true)}>
-                      {playsLike ? `📍 ${playsLike.playsLikeYards} yd plays like — recheck` : '📍 Check yardage'}
+                  {currentHole.teeCoords[tee.id] ? (
+                    <BigButton
+                      variant="secondary"
+                      onClick={() => moveDebugPosition(currentHole.teeCoords[tee.id])}
+                    >
+                      Reset to tee
                     </BigButton>
+                  ) : (
+                    <p className="text-amber-200/70 text-xs text-center">
+                      This tee hasn't been set yet — use "Set tee" on the hole screen once you're there.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <BigButton onClick={handleMarkShot}>Mark my ball (+1)</BigButton>
-                      <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
-                        Lost / Hazard
-                      </BigButton>
-                    </div>
-                    <BigButton variant="secondary" onClick={enterPuttMode}>
-                      On the green
-                    </BigButton>
-                  </>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <div className="bg-neutral-900 rounded-2xl p-6 text-center">
-                      <div className="text-5xl font-bold text-white">{putts}</div>
-                      <div className="text-neutral-500 text-sm mt-1">putts this hole</div>
-                    </div>
-                    <BigButton onClick={addPutt}>+1 Putt</BigButton>
-                    <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
-                      Lost / Hazard
-                    </BigButton>
-                    <BigButton variant="ghost" onClick={leavePuttMode} disabled={putts > 0}>
-                      Not on the green after all
-                    </BigButton>
+          {showMap ? (
+            // Range-reading screen: brought up deliberately, one big button to leave it.
+            // Everything else (strokes, finish, drive-mode buttons) is hidden while here
+            // so the map doesn't compete with them for attention.
+            <div className="flex flex-col gap-3">
+              <BigButton variant="secondary" onClick={() => setShowMap(false)}>
+                ‹ Back
+              </BigButton>
+              <div className="h-[55vh] rounded-2xl overflow-hidden relative">
+                <SatelliteMap
+                  center={mapCenter}
+                  pins={pins}
+                  outlines={outlines}
+                  onMapClick={(pos) => void handleTapTarget(pos)}
+                />
+                {locating && (
+                  <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                    Locating…
                   </div>
-                )}
-
-                {mulliganEnabled && (
-                  <BigButton variant="ghost" onClick={handleMulligan} disabled={history.length === 0}>
-                    ↩ Mulligan (undo last stroke)
-                  </BigButton>
                 )}
               </div>
+              <p className="text-neutral-500 text-xs -mt-1">Tap where you're aiming.</p>
 
-              {/* Clubs pane */}
-              <div className="w-1/2 pl-1 flex flex-col gap-3">
-                <button onClick={() => setPanel('shot')} className="text-neutral-400 text-sm underline">
-                  ‹ Back
-                </button>
-                <p className="text-neutral-500 text-xs -mt-1">
-                  Tap the club you're using. It'll tag your next marked shot for club-distance stats.
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {clubChoices.map((club) => (
+              {yardageLoading && (
+                <div className="text-neutral-400 text-sm">Calculating plays-like yardage…</div>
+              )}
+              {playsLike && !yardageLoading && (
+                <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-1">
+                  <div className="text-3xl font-bold text-white">{playsLike.playsLikeYards} yd plays like</div>
+                  <div className="text-neutral-500 text-sm">
+                    {playsLike.actualYards} yd straight · {playsLike.elevationAdjustYards >= 0 ? '+' : ''}
+                    {playsLike.elevationAdjustYards} elevation · {playsLike.windAdjustYards >= 0 ? '+' : ''}
+                    {playsLike.windAdjustYards} wind
+                  </div>
+                  {wind && (
+                    <div className="text-neutral-500 text-sm">
+                      💨 {Math.round(wind.speedMph)} mph from {windCompassLabel(wind.directionDeg)}
+                    </div>
+                  )}
+                  <div className="text-neutral-600 text-xs">Estimate — not laser-precision.</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="overflow-hidden">
+                <div
+                  className="flex transition-transform duration-200 ease-out"
+                  style={{ width: '200%', transform: panel === 'clubs' ? 'translateX(-50%)' : 'translateX(0%)' }}
+                  onTouchStart={onTouchStart}
+                  onTouchEnd={onTouchEnd}
+                >
+                  {/* Drive-mode pane: big buttons only, no map */}
+                  <div className="w-1/2 pr-1 flex flex-col gap-3">
                     <button
-                      key={club}
-                      onClick={() => selectClub(club)}
-                      className={`min-h-14 rounded-xl text-sm font-semibold ${
-                        armedClub === club ? 'bg-green-600 text-white' : 'bg-neutral-800 text-neutral-200'
-                      }`}
+                      onClick={() => setPanel('clubs')}
+                      className="self-end text-neutral-400 text-sm underline"
                     >
-                      {club}
+                      🏌️ My bag ›
                     </button>
-                  ))}
+
+                    {armedClub && (
+                      <div className="flex items-center justify-between bg-green-900/40 border border-green-700 rounded-xl px-3 py-2">
+                        <span className="text-green-300 text-sm font-medium">Using {armedClub}</span>
+                        <button onClick={() => setArmedClub(null)} className="text-green-400 text-xs underline">
+                          Clear
+                        </button>
+                      </div>
+                    )}
+
+                    {!puttMode ? (
+                      <>
+                        {strokes === 0 && (
+                          <BigButton variant="secondary" onClick={handleSetTee}>
+                            📍 Set tee (I'm standing on it)
+                          </BigButton>
+                        )}
+
+                        <BigButton variant="secondary" onClick={() => setShowMap(true)}>
+                          {playsLike
+                            ? `📍 ${playsLike.playsLikeYards} yd plays like — recheck`
+                            : '📍 Check yardage'}
+                        </BigButton>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <BigButton onClick={handleMarkShot}>Mark my ball (+1)</BigButton>
+                          <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
+                            Lost / Hazard
+                          </BigButton>
+                        </div>
+                        <BigButton variant="secondary" onClick={enterPuttMode}>
+                          On the green
+                        </BigButton>
+                      </>
+                    ) : (
+                      <div className="flex flex-col gap-3">
+                        <div className="bg-neutral-900 rounded-2xl p-6 text-center">
+                          <div className="text-5xl font-bold text-white">{putts}</div>
+                          <div className="text-neutral-500 text-sm mt-1">putts this hole</div>
+                        </div>
+                        <BigButton onClick={addPutt}>+1 Putt</BigButton>
+                        <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
+                          Lost / Hazard
+                        </BigButton>
+                        <BigButton variant="ghost" onClick={leavePuttMode} disabled={putts > 0}>
+                          Not on the green after all
+                        </BigButton>
+                      </div>
+                    )}
+
+                    {mulliganEnabled && (
+                      <BigButton variant="ghost" onClick={handleMulligan} disabled={history.length === 0}>
+                        ↩ Mulligan (undo last stroke)
+                      </BigButton>
+                    )}
+                  </div>
+
+                  {/* Clubs pane */}
+                  <div className="w-1/2 pl-1 flex flex-col gap-3">
+                    <button onClick={() => setPanel('shot')} className="text-neutral-400 text-sm underline">
+                      ‹ Back
+                    </button>
+                    <p className="text-neutral-500 text-xs -mt-1">
+                      Tap the club you're using. It'll tag your next marked shot for club-distance stats.
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {clubChoices.map((club) => (
+                        <button
+                          key={club}
+                          onClick={() => selectClub(club)}
+                          className={`min-h-14 rounded-xl text-sm font-semibold ${
+                            armedClub === club ? 'bg-green-600 text-white' : 'bg-neutral-800 text-neutral-200'
+                          }`}
+                        >
+                          {club}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div className="bg-neutral-900 rounded-2xl p-4 flex justify-between items-center">
-            <span className="text-neutral-400 text-sm">Strokes this hole</span>
-            <span className="text-2xl font-bold text-white">{strokes}</span>
-          </div>
+              <div className="bg-neutral-900 rounded-2xl p-4 flex justify-between items-center">
+                <span className="text-neutral-400 text-sm">Strokes this hole</span>
+                <span className="text-2xl font-bold text-white">{strokes}</span>
+              </div>
 
-          <BigButton onClick={finishHole} disabled={strokes === 0}>
-            {holesList[holesList.length - 1]?.number === currentHole.number ? 'Finish round' : 'Next hole'}
-          </BigButton>
+              <BigButton onClick={finishHole} disabled={strokes === 0}>
+                {holesList[holesList.length - 1]?.number === currentHole.number ? 'Finish round' : 'Next hole'}
+              </BigButton>
+            </>
+          )}
         </>
       )}
 

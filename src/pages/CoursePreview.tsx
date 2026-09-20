@@ -4,8 +4,7 @@ import { db, newId } from '../db/db'
 import type { Course, Hole, Tee } from '../db/schema'
 import { BigButton } from '../components/BigButton'
 import { computeCourseSummary, type CourseSummary } from '../lib/courseStats'
-
-const toParLabel = (n: number) => (n === 0 ? 'E' : n > 0 ? `+${n}` : String(n))
+import { toParLabel } from '../lib/format'
 
 export function CoursePreview() {
   const { courseId } = useParams<{ courseId: string }>()

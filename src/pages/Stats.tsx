@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { computeStats, computeClubDistances, type StatsSummary, type ClubStats } from '../lib/stats'
+import { toParLabel } from '../lib/format'
 
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
@@ -12,13 +13,6 @@ function StatTile({ label, value }: { label: string; value: string }) {
 
 const fmt = (n: number | null, digits = 1, suffix = '') =>
   n === null ? '—' : `${n.toFixed(digits)}${suffix}`
-
-const toParLabel = (n: number | null) => {
-  if (n === null) return '—'
-  const rounded = Math.round(n * 10) / 10
-  if (rounded === 0) return 'E'
-  return rounded > 0 ? `+${rounded}` : String(rounded)
-}
 
 export function Stats() {
   const [stats, setStats] = useState<StatsSummary | null>(null)

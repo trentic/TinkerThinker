@@ -8,10 +8,9 @@ import { daysSinceLastBackup } from '../db/backup'
 import { checkCourseDeletable, deleteCourseCascade } from '../db/courseActions'
 import { computeCourseSummary, type CourseSummary } from '../lib/courseStats'
 import { isDebugLocationEnabled } from '../lib/settings'
+import { toParLabel } from '../lib/format'
 
 type HoleSelection = 'all18' | 'front9' | 'back9'
-
-const toParLabel = (n: number) => (n === 0 ? 'E' : n > 0 ? `+${n}` : String(n))
 
 export function Home() {
   const navigate = useNavigate()
