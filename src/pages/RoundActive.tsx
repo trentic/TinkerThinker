@@ -7,7 +7,14 @@ import { SatelliteMap, type MapPin, type MapOutline } from '../components/Satell
 import { db, newId } from '../db/db'
 import type { Course, Hole, HoleScore, PenaltyType, Round, Tee } from '../db/schema'
 import { distanceYards, getCurrentPosition, type LatLng } from '../lib/geo'
-import { calculatePlaysLike, getCurrentWind, getElevationMeters, type PlaysLikeResult } from '../lib/playsLike'
+import {
+  calculatePlaysLike,
+  getCurrentWind,
+  getElevationMeters,
+  windCompassLabel,
+  type PlaysLikeResult,
+  type WindInfo,
+} from '../lib/playsLike'
 import { COMMON_CLUBS } from '../lib/clubs'
 import { isMulliganEnabled } from '../lib/settings'
 
@@ -39,6 +46,7 @@ export function RoundActive() {
   const [locating, setLocating] = useState(false)
   const [target, setTarget] = useState<LatLng | null>(null)
   const [playsLike, setPlaysLike] = useState<PlaysLikeResult | null>(null)
+  const [wind, setWind] = useState<WindInfo | null>(null)
   const [yardageLoading, setYardageLoading] = useState(false)
 
   const [strokes, setStrokes] = useState(0)
@@ -119,6 +127,7 @@ export function RoundActive() {
     setJustCapturedGreen(false)
     setTarget(null)
     setPlaysLike(null)
+    setWind(null)
     setHistory([])
     setArmedClub(null)
     setPanel('shot')
@@ -163,6 +172,7 @@ export function RoundActive() {
         getElevationMeters([origin, pos]),
         getCurrentWind(origin),
       ])
+      setWind(wind)
       setPlaysLike(
         calculatePlaysLike({
           from: origin,
@@ -210,6 +220,7 @@ export function RoundActive() {
     setLastMarkedPos(newPos)
     setTarget(null)
     setPlaysLike(null)
+    setWind(null)
     setArmedClub(null)
 
     if (nextStroke === 1 && currentHole.par >= 4) {
@@ -425,6 +436,11 @@ export function RoundActive() {
                 {playsLike.windAdjustYards >= 0 ? '+' : ''}
                 {playsLike.windAdjustYards} wind
               </div>
+              {wind && (
+                <div className="text-neutral-500 text-sm">
+                  💨 {Math.round(wind.speedMph)} mph from {windCompassLabel(wind.directionDeg)}
+                </div>
+              )}
               <div className="text-neutral-600 text-xs">Estimate — not laser-precision.</div>
             </div>
           )}

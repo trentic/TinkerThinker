@@ -37,6 +37,14 @@ export async function getCurrentWind(point: LatLng): Promise<WindInfo> {
   }
 }
 
+const COMPASS_POINTS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+
+/** Compass direction the wind is blowing FROM, e.g. 12mph "from NW". */
+export function windCompassLabel(directionDeg: number): string {
+  const index = Math.round(directionDeg / 45) % 8
+  return COMPASS_POINTS[index]
+}
+
 function bearingDeg(from: LatLng, to: LatLng): number {
   const toRad = (d: number) => (d * Math.PI) / 180
   const toDeg = (r: number) => (r * 180) / Math.PI

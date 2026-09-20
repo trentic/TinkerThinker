@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { BigButton } from '../components/BigButton'
 import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
@@ -26,6 +26,7 @@ const TEE_PRESETS = [
 ]
 
 interface DraftHole {
+  id?: string // present when editing an existing hole; absent for a new tap
   number: number
   centerLat: number
   centerLng: number
@@ -43,7 +44,10 @@ interface DraftTee {
 
 export function CourseBuilder() {
   const navigate = useNavigate()
-  const [step, setStep] = useState<Step>('locate')
+  const { courseId: editingCourseId } = useParams<{ courseId: string }>()
+  const isEditing = !!editingCourseId
+  const [step, setStep] = useState<Step>(isEditing ? 'tees' : 'locate')
+  const [loadingExisting, setLoadingExisting] = useState(isEditing)
   const [courseName, setCourseName] = useState('')
   const [holeCount, setHoleCount] = useState<9 | 18>(18)
   const [query, setQuery] = useState('')
@@ -52,12 +56,51 @@ export function CourseBuilder() {
   const [center, setCenter] = useState<LatLng | null>(null)
   const [osmFeatures, setOsmFeatures] = useState<OsmGolfFeature[]>([])
   const [holes, setHoles] = useState<DraftHole[]>([])
-  const [tees, setTees] = useState<DraftTee[]>([{ id: newId(), name: 'White', color: '#e5e7eb' }])
+  const [tees, setTees] = useState<DraftTee[]>(
+    isEditing ? [] : [{ id: newId(), name: 'White', color: '#e5e7eb' }],
+  )
+  const [originalTeeIds, setOriginalTeeIds] = useState<string[]>([])
   const [activeTeeForYardage, setActiveTeeForYardage] = useState<string | null>(null)
   const [ocrBusy, setOcrBusy] = useState(false)
   const [ocrRows, setOcrRows] = useState<OcrDraftRow[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [usedAutoMap, setUsedAutoMap] = useState(false)
+
+  // Editing an existing course: load it in, skip straight past
+  // location/mapping (that data already exists and this flow doesn't
+  // touch it), and let the user adjust tee boxes and par/yardage.
+  useEffect(() => {
+    if (!editingCourseId) return
+    ;(async () => {
+      const [c, teeRecords, holeRecords] = await Promise.all([
+        db.courses.get(editingCourseId),
+        db.tees.where('courseId').equals(editingCourseId).sortBy('order'),
+        db.holes.where('courseId').equals(editingCourseId).sortBy('number'),
+      ])
+      if (!c) {
+        setLoadingExisting(false)
+        return
+      }
+      setCourseName(c.name)
+      setHoleCount(c.holeCount)
+      setCenter({ lat: c.centerLat, lng: c.centerLng })
+      setOriginalTeeIds(teeRecords.map((t) => t.id))
+      setTees(teeRecords.map((t) => ({ id: t.id, name: t.name, color: t.color })))
+      setHoles(
+        holeRecords.map((h) => ({
+          id: h.id,
+          number: h.number,
+          centerLat: h.centerLat,
+          centerLng: h.centerLng,
+          outline: h.outline,
+          par: h.par,
+          strokeIndex: h.strokeIndex,
+          yardageByTee: h.yardageByTee,
+        })),
+      )
+      setLoadingExisting(false)
+    })()
+  }, [editingCourseId])
 
   async function handleSearch() {
     if (!query.trim()) return
@@ -176,44 +219,74 @@ export function CourseBuilder() {
     setOcrRows(null)
   }
 
+  async function saveCourseEdits(courseId: string) {
+    await db.transaction('rw', [db.courses, db.tees, db.holes], async () => {
+      await db.courses.update(courseId, { name: courseName.trim() || 'Unnamed course' })
+
+      const keptTeeIds = new Set(tees.map((t) => t.id))
+      const removedTeeIds = originalTeeIds.filter((id) => !keptTeeIds.has(id))
+      if (removedTeeIds.length > 0) await db.tees.bulkDelete(removedTeeIds)
+      await db.tees.bulkPut(
+        tees.map((t, i) => ({ id: t.id, courseId, name: t.name, color: t.color, order: i })),
+      )
+
+      // Partial updates only — this deliberately leaves centerLat/Lng,
+      // outline, teeCoords, and green location untouched, since those come
+      // from mapping/real play, not from this editable form.
+      for (const h of holes) {
+        if (!h.id) continue
+        await db.holes.update(h.id, { par: h.par, strokeIndex: h.strokeIndex, yardageByTee: h.yardageByTee })
+      }
+    })
+  }
+
+  async function createCourse() {
+    if (!center) return
+    const courseId = newId()
+    await db.courses.add({
+      id: courseId,
+      name: courseName.trim() || 'Unnamed course',
+      centerLat: center.lat,
+      centerLng: center.lng,
+      holeCount,
+      source: usedAutoMap ? 'osm' : osmFeatures.length > 0 ? 'mixed' : 'manual',
+      createdAt: Date.now(),
+    })
+
+    const teeRecords: Tee[] = tees.map((t, i) => ({
+      id: t.id,
+      courseId,
+      name: t.name,
+      color: t.color,
+      order: i,
+    }))
+    await db.tees.bulkAdd(teeRecords)
+
+    const holeRecords: Hole[] = holes.map((h) => ({
+      id: newId(),
+      courseId,
+      number: h.number,
+      par: h.par,
+      strokeIndex: h.strokeIndex,
+      centerLat: h.centerLat,
+      centerLng: h.centerLng,
+      outline: h.outline,
+      teeCoords: {},
+      yardageByTee: h.yardageByTee,
+    }))
+    await db.holes.bulkAdd(holeRecords)
+  }
+
   async function saveCourse() {
-    if (!center || holes.length !== holeCount || tees.length === 0) return
+    if (!center || tees.length === 0) return
+    if (!isEditing && holes.length !== holeCount) return
     setSaving(true)
     try {
-      const courseId = newId()
-      await db.courses.add({
-        id: courseId,
-        name: courseName.trim() || 'Unnamed course',
-        centerLat: center.lat,
-        centerLng: center.lng,
-        holeCount,
-        source: usedAutoMap ? 'osm' : osmFeatures.length > 0 ? 'mixed' : 'manual',
-        createdAt: Date.now(),
-      })
-
-      const teeRecords: Tee[] = tees.map((t, i) => ({
-        id: t.id,
-        courseId,
-        name: t.name,
-        color: t.color,
-        order: i,
-      }))
-      await db.tees.bulkAdd(teeRecords)
-
-      const holeRecords: Hole[] = holes.map((h) => ({
-        id: newId(),
-        courseId,
-        number: h.number,
-        par: h.par,
-        strokeIndex: h.strokeIndex,
-        centerLat: h.centerLat,
-        centerLng: h.centerLng,
-        outline: h.outline,
-        teeCoords: {},
-        yardageByTee: h.yardageByTee,
-      }))
-      await db.holes.bulkAdd(holeRecords)
-
+      if (isEditing && editingCourseId) {
+        await saveCourseEdits(editingCourseId)
+      } else {
+        await createCourse()
+      }
       navigate('/')
     } finally {
       setSaving(false)
@@ -238,9 +311,13 @@ export function CourseBuilder() {
       color: '#6b7280',
     }))
 
+  if (loadingExisting) {
+    return <div className="p-4 text-neutral-500">Loading course…</div>
+  }
+
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4 pb-24">
-      <h1 className="text-2xl font-bold text-white mt-2">Add a course</h1>
+      <h1 className="text-2xl font-bold text-white mt-2">{isEditing ? 'Edit course' : 'Add a course'}</h1>
 
       {step === 'locate' && (
         <div className="flex flex-col gap-3">
@@ -344,12 +421,14 @@ export function CourseBuilder() {
 
       {step === 'tees' && (
         <div className="flex flex-col gap-3">
-          <button
-            onClick={() => setStep(usedAutoMap ? 'confirm' : 'map')}
-            className="self-start text-neutral-400 text-sm underline"
-          >
-            ‹ Back
-          </button>
+          {!isEditing && (
+            <button
+              onClick={() => setStep(usedAutoMap ? 'confirm' : 'map')}
+              className="self-start text-neutral-400 text-sm underline"
+            >
+              ‹ Back
+            </button>
+          )}
           <p className="text-neutral-400 text-sm">Which tee boxes does this course have?</p>
           <div className="flex flex-col gap-2">
             {tees.map((t) => (
@@ -477,7 +556,7 @@ export function CourseBuilder() {
           </div>
 
           <BigButton onClick={saveCourse} disabled={saving}>
-            {saving ? 'Saving…' : 'Save course'}
+            {saving ? 'Saving…' : isEditing ? 'Save changes' : 'Save course'}
           </BigButton>
         </div>
       )}

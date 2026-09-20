@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom'
 import { BottomNav } from './components/BottomNav'
 import { Home } from './pages/Home'
 import { CourseBuilder } from './pages/CourseBuilder'
+import { CoursePreview } from './pages/CoursePreview'
 import { RoundList } from './pages/RoundList'
 import { RoundActive } from './pages/RoundActive'
 import { Scorecard } from './pages/Scorecard'
@@ -26,6 +27,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/courses/new" element={<CourseBuilder />} />
         <Route path="/courses/:courseId/edit" element={<CourseBuilder />} />
+        <Route path="/courses/:courseId/preview" element={<CoursePreview />} />
         <Route path="/rounds" element={<RoundList />} />
         <Route path="/round/:roundId" element={<RoundActive />} />
         <Route path="/round/:roundId/scorecard" element={<Scorecard />} />
