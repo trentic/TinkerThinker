@@ -1,0 +1,18 @@
+export const COMMON_CLUBS = [
+  'Driver',
+  '3-Wood',
+  '5-Wood',
+  'Hybrid',
+  '3-Iron',
+  '4-Iron',
+  '5-Iron',
+  '6-Iron',
+  '7-Iron',
+  '8-Iron',
+  '9-Iron',
+  'PW',
+  'GW',
+  'SW',
+  'LW',
+  'Putter',
+]

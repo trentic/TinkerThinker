@@ -1,0 +1,28 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: dark;
+  --color-fairway: #16a34a;
+  --color-fairway-dark: #14532d;
+  --color-hazard: #2563eb;
+  --color-danger: #dc2626;
+  --color-bg: #0a0f0a;
+  --color-surface: #131a13;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--color-bg);
+  color: #f3f4f6;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* On-course UI needs big, glove/sun friendly hit targets */
+button {
+  touch-action: manipulation;
+}
