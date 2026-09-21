@@ -107,14 +107,17 @@ export function Home() {
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
-      <h1 className="text-2xl font-bold text-white mt-2">Fairway</h1>
+      <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>
+        Fairway
+      </h1>
 
       {isDebugLocationEnabled() && (
         <Link
           to="/settings"
-          className="bg-amber-950/40 border border-amber-800 rounded-xl p-3 text-amber-200 text-sm"
+          className="glass-solid rounded-xl p-3 text-sm"
+          style={{ color: '#8a5a12' }}
         >
-          🐛 Debug location is on — real rounds will use a simulated GPS position. Tap to turn it
+          Debug location is on — real rounds will use a simulated GPS position. Tap to turn it
           off in Settings.
         </Link>
       )}
@@ -122,18 +125,24 @@ export function Home() {
       {resumeRound && (
         <Link
           to={`/round/${resumeRound.id}`}
-          className="bg-green-900/40 border border-green-700 rounded-xl p-3 flex items-center justify-between"
+          className="glass rounded-xl p-3 flex items-center justify-between"
         >
           <div>
-            <div className="text-green-300 text-sm font-medium">Round in progress</div>
-            <div className="text-white font-semibold">{resumeCourseName ?? 'Unknown course'}</div>
+            <div className="text-sm font-medium" style={{ color: 'var(--ink-secondary)' }}>
+              Round in progress
+            </div>
+            <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+              {resumeCourseName ?? 'Unknown course'}
+            </div>
           </div>
-          <span className="text-green-400 text-sm font-medium">Resume ›</span>
+          <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+            Resume ›
+          </span>
         </Link>
       )}
 
       {backupAge !== null && backupAge >= 14 && (
-        <div className="bg-amber-900/40 border border-amber-700 text-amber-200 text-sm rounded-xl p-3">
+        <div className="glass-solid text-sm rounded-xl p-3" style={{ color: '#8a5a12' }}>
           It's been {backupAge} days since your last backup. Your rounds only live on this
           device —{' '}
           <a href="#/settings" className="underline font-medium">
@@ -148,13 +157,14 @@ export function Home() {
       </BigButton>
 
       <div className="flex flex-col gap-2">
-        <h2 className="text-neutral-400 text-sm font-semibold uppercase tracking-wide">
+        <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-muted)' }}>
           Your courses
         </h2>
 
         {allCourses && allCourses.length > 3 && (
           <input
-            className="bg-neutral-900 border border-neutral-700 rounded-xl px-4 py-2.5 text-white text-sm"
+            className="glass-solid rounded-xl px-4 py-2.5 text-sm"
+            style={{ color: 'var(--ink)' }}
             placeholder="Search courses"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -162,30 +172,37 @@ export function Home() {
         )}
 
         {allCourses?.length === 0 && (
-          <p className="text-neutral-500 text-sm">
+          <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>
             No courses yet. Add one to start tracking rounds.
           </p>
         )}
         {allCourses && allCourses.length > 0 && courses?.length === 0 && (
-          <p className="text-neutral-500 text-sm">No courses match "{query}".</p>
+          <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>
+            No courses match "{query}".
+          </p>
         )}
 
         {courses?.map((course) => {
           const summary = summaries[course.id]
           return (
-            <div key={course.id} className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-3">
+            <div key={course.id} className="glass rounded-2xl p-4 flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-semibold text-white">{course.name}</div>
-                  <div className="text-neutral-500 text-sm">{course.holeCount} holes</div>
+                  <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+                    {course.name}
+                  </div>
+                  <div className="text-sm" style={{ color: 'var(--ink-muted)' }}>
+                    {course.holeCount} holes
+                  </div>
                 </div>
                 <div className="flex gap-3 shrink-0 mt-1">
-                  <Link to={`/courses/${course.id}/edit`} className="text-neutral-500 text-xs underline">
+                  <Link to={`/courses/${course.id}/edit`} className="text-xs underline" style={{ color: 'var(--ink-muted)' }}>
                     Edit
                   </Link>
                   <button
                     onClick={() => requestDeleteCourse(course)}
-                    className="text-neutral-600 text-xs underline"
+                    className="text-xs underline"
+                    style={{ color: 'var(--ink-muted)' }}
                   >
                     Delete
                   </button>
@@ -193,7 +210,7 @@ export function Home() {
               </div>
 
               <div className="flex items-center justify-between">
-                <p className="text-neutral-500 text-xs">
+                <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
                   {summary && summary.roundsPlayed > 0
                     ? `Played ${summary.roundsPlayed}x · avg ${toParLabel(Math.round(summary.avgToPar ?? 0))}${
                         summary.lastPlayedAt
@@ -202,14 +219,20 @@ export function Home() {
                       }`
                     : 'Not played yet'}
                 </p>
-                <Link to={`/courses/${course.id}/preview`} className="text-green-500 text-xs underline shrink-0">
+                <Link
+                  to={`/courses/${course.id}/preview`}
+                  className="text-xs underline shrink-0"
+                  style={{ color: 'var(--color-green)' }}
+                >
                   View scorecard
                 </Link>
               </div>
 
               {pickingHolesFor?.courseId === course.id ? (
                 <div className="flex flex-col gap-2">
-                  <p className="text-neutral-400 text-sm">How many holes today?</p>
+                  <p className="text-sm" style={{ color: 'var(--ink-secondary)' }}>
+                    How many holes today?
+                  </p>
                   <div className="grid grid-cols-3 gap-2">
                     <BigButton onClick={() => pickHoles(course.id, pickingHolesFor.teeId, 'all18')}>
                       All 18
@@ -241,7 +264,7 @@ export function Home() {
                     </button>
                   ))}
                   {tees?.length === 0 && (
-                    <p className="text-neutral-500 text-sm">
+                    <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>
                       No tee boxes set up yet —{' '}
                       <Link to={`/courses/${course.id}/edit`} className="underline">
                         add one
@@ -262,7 +285,7 @@ export function Home() {
 
       {deleteTarget && (
         <Modal title={`Delete ${deleteTarget.name}?`} onClose={() => setDeleteTarget(null)}>
-          <p className="text-neutral-400 text-sm mb-4">
+          <p className="text-sm mb-4" style={{ color: 'var(--ink-secondary)' }}>
             This removes the course and its tee boxes/hole map. Rounds and stats you already
             recorded there are kept.
           </p>
@@ -279,7 +302,9 @@ export function Home() {
 
       {deleteBlockedReason && (
         <Modal title="Can't delete this course" onClose={() => setDeleteBlockedReason(null)}>
-          <p className="text-neutral-400 text-sm mb-4">{deleteBlockedReason}</p>
+          <p className="text-sm mb-4" style={{ color: 'var(--ink-secondary)' }}>
+            {deleteBlockedReason}
+          </p>
           <BigButton onClick={() => setDeleteBlockedReason(null)}>Got it</BigButton>
         </Modal>
       )}

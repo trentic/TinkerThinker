@@ -26,6 +26,17 @@ const TEE_PRESETS = [
   { name: 'Red', color: '#dc2626' },
 ]
 
+const ink = { color: 'var(--ink)' }
+const inkSecondary = { color: 'var(--ink-secondary)' }
+const inkMuted = { color: 'var(--ink-muted)' }
+const amberText = { color: '#a15c00' }
+const toggleOn = {
+  background: 'linear-gradient(180deg, #8CF0A8 0%, #34C864 48%, #1E9E4A 100%)',
+  boxShadow: '0 4px 10px rgba(20,120,60,0.35)',
+  color: '#ffffff',
+}
+const toggleOff = { background: 'rgba(255,255,255,0.5)', color: 'var(--ink-muted)' }
+
 interface DraftHole {
   id?: string // present when editing an existing hole; absent for a new tap
   number: number
@@ -337,17 +348,24 @@ export function CourseBuilder() {
     }))
 
   if (loadingExisting) {
-    return <div className="p-4 text-neutral-500">Loading course…</div>
+    return (
+      <div className="p-4" style={inkMuted}>
+        Loading course…
+      </div>
+    )
   }
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4 pb-24">
-      <h1 className="text-2xl font-bold text-white mt-2">{isEditing ? 'Edit course' : 'Add a course'}</h1>
+      <h1 className="text-2xl font-bold mt-2" style={ink}>
+        {isEditing ? 'Edit course' : 'Add a course'}
+      </h1>
 
       {step === 'locate' && (
         <div className="flex flex-col gap-3">
           <input
-            className="bg-neutral-900 border border-neutral-700 rounded-xl px-4 py-3 text-white"
+            className="glass-solid rounded-xl px-4 py-3"
+            style={ink}
             placeholder="Course name or nearby address"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -358,16 +376,19 @@ export function CourseBuilder() {
           <BigButton variant="secondary" onClick={useCurrentLocation} disabled={findingNearby}>
             {findingNearby ? 'Finding nearby courses…' : 'Use my current location'}
           </BigButton>
-          {nearbyNotice && <p className="text-amber-400 text-xs">{nearbyNotice}</p>}
+          {nearbyNotice && (
+            <p className="text-xs" style={amberText}>
+              {nearbyNotice}
+            </p>
+          )}
 
           <div className="flex gap-2">
             {([9, 18] as const).map((n) => (
               <button
                 key={n}
                 onClick={() => setHoleCount(n)}
-                className={`flex-1 min-h-12 rounded-xl font-medium ${
-                  holeCount === n ? 'bg-green-600 text-white' : 'bg-neutral-800 text-neutral-300'
-                }`}
+                className="flex-1 min-h-12 rounded-xl font-medium"
+                style={holeCount === n ? toggleOn : toggleOff}
               >
                 {n} holes
               </button>
@@ -378,7 +399,8 @@ export function CourseBuilder() {
             <button
               key={i}
               onClick={() => selectLocation({ lat: r.lat, lng: r.lng }, r.displayName.split(',')[0])}
-              className="text-left bg-neutral-900 rounded-xl p-3 text-sm text-neutral-300"
+              className="text-left glass rounded-xl p-3 text-sm"
+              style={inkSecondary}
             >
               {r.displayName}
             </button>
@@ -388,16 +410,18 @@ export function CourseBuilder() {
 
       {step === 'checking' && (
         <div className="flex flex-col items-center gap-3 py-16 text-center">
-          <p className="text-neutral-400 text-sm">Checking OpenStreetMap for this course…</p>
+          <p className="text-sm" style={inkSecondary}>
+            Checking OpenStreetMap for this course…
+          </p>
         </div>
       )}
 
       {step === 'confirm' && center && (
         <div className="flex flex-col gap-3">
-          <button onClick={() => setStep('locate')} className="self-start text-neutral-400 text-sm underline">
+          <button onClick={() => setStep('locate')} className="self-start text-sm underline" style={inkSecondary}>
             ‹ Back
           </button>
-          <p className="text-neutral-400 text-sm">
+          <p className="text-sm" style={inkSecondary}>
             OpenStreetMap already has all {holeCount} holes mapped for this course.{' '}
             {holeOutlines.length > 0
               ? 'The amber lines are what OSM traced for each hole — check that it looks right before using it.'
@@ -420,11 +444,12 @@ export function CourseBuilder() {
               setHoles([])
               setStep('locate')
             }}
-            className="self-start text-neutral-400 text-sm underline"
+            className="self-start text-sm underline"
+            style={inkSecondary}
           >
             ‹ Back
           </button>
-          <p className="text-neutral-400 text-sm">
+          <p className="text-sm" style={inkSecondary}>
             Tap the middle of hole {holes.length + 1} on the satellite view, in playing order.
             Gray dots are OpenStreetMap's reference data for this area, if any exists.
           </p>
@@ -432,10 +457,10 @@ export function CourseBuilder() {
             <SatelliteMap center={center} pins={[...osmPins, ...holePins]} onMapClick={addHoleTap} />
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-white font-semibold">
+            <span className="font-semibold" style={ink}>
               {holes.length} / {holeCount} holes placed
             </span>
-            <button onClick={undoLastHole} className="text-neutral-400 text-sm underline">
+            <button onClick={undoLastHole} className="text-sm underline" style={inkSecondary}>
               Undo last
             </button>
           </div>
@@ -450,18 +475,23 @@ export function CourseBuilder() {
           {!isEditing && (
             <button
               onClick={() => setStep(usedAutoMap ? 'confirm' : 'map')}
-              className="self-start text-neutral-400 text-sm underline"
+              className="self-start text-sm underline"
+              style={inkSecondary}
             >
               ‹ Back
             </button>
           )}
-          <p className="text-neutral-400 text-sm">Which tee boxes does this course have?</p>
+          <p className="text-sm" style={inkSecondary}>
+            Which tee boxes does this course have?
+          </p>
           <div className="flex flex-col gap-2">
             {tees.map((t) => (
-              <div key={t.id} className="flex items-center gap-3 bg-neutral-900 rounded-xl p-3">
+              <div key={t.id} className="flex items-center gap-3 glass rounded-xl p-3">
                 <span className="w-4 h-4 rounded-full" style={{ backgroundColor: t.color }} />
-                <span className="text-white flex-1">{t.name}</span>
-                <button onClick={() => removeTee(t.id)} className="text-neutral-500 text-sm">
+                <span className="flex-1" style={ink}>
+                  {t.name}
+                </span>
+                <button onClick={() => removeTee(t.id)} className="text-sm" style={inkMuted}>
                   Remove
                 </button>
               </div>
@@ -472,7 +502,8 @@ export function CourseBuilder() {
               <button
                 key={p.name}
                 onClick={() => addTee(p.name, p.color)}
-                className="min-h-11 px-4 rounded-xl bg-neutral-800 text-neutral-200 text-sm font-medium"
+                className="min-h-11 px-4 rounded-xl glass-solid text-sm font-medium"
+                style={ink}
               >
                 + {p.name}
               </button>
@@ -486,19 +517,22 @@ export function CourseBuilder() {
 
       {step === 'review' && (
         <div className="flex flex-col gap-4">
-          <button onClick={() => setStep('tees')} className="self-start text-neutral-400 text-sm underline">
+          <button onClick={() => setStep('tees')} className="self-start text-sm underline" style={inkSecondary}>
             ‹ Back
           </button>
           <input
-            className="bg-neutral-900 border border-neutral-700 rounded-xl px-4 py-3 text-white"
+            className="glass-solid rounded-xl px-4 py-3"
+            style={ink}
             placeholder="Course name"
             value={courseName}
             onChange={(e) => setCourseName(e.target.value)}
           />
 
-          <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-3">
-            <div className="font-semibold text-white">Import from a scorecard photo (optional)</div>
-            <p className="text-neutral-500 text-xs">
+          <div className="glass rounded-2xl p-4 flex flex-col gap-3">
+            <div className="font-semibold" style={ink}>
+              Import from a scorecard photo (optional)
+            </div>
+            <p className="text-xs" style={inkMuted}>
               On-device OCR gives a draft — always double-check the numbers it fills in.
             </p>
             <div className="flex gap-2 flex-wrap">
@@ -506,15 +540,17 @@ export function CourseBuilder() {
                 <button
                   key={t.id}
                   onClick={() => setActiveTeeForYardage(t.id)}
-                  className={`min-h-10 px-3 rounded-lg text-sm font-medium ${
-                    activeTeeForYardage === t.id ? 'bg-green-600 text-white' : 'bg-neutral-800 text-neutral-300'
-                  }`}
+                  className="min-h-10 px-3 rounded-lg text-sm font-medium"
+                  style={activeTeeForYardage === t.id ? toggleOn : toggleOff}
                 >
                   Yardage for {t.name}
                 </button>
               ))}
             </div>
-            <label className="min-h-14 rounded-xl bg-neutral-800 text-neutral-200 flex items-center justify-center font-medium cursor-pointer">
+            <label
+              className="min-h-14 rounded-xl glass-solid flex items-center justify-center font-medium cursor-pointer"
+              style={ink}
+            >
               {ocrBusy ? 'Reading scorecard…' : 'Take/upload scorecard photo'}
               <input
                 type="file"
@@ -529,14 +565,18 @@ export function CourseBuilder() {
               />
             </label>
             {!activeTeeForYardage && (
-              <p className="text-amber-400 text-xs">Pick which tee box the photo's yardages are for first.</p>
+              <p className="text-xs" style={amberText}>
+                Pick which tee box the photo's yardages are for first.
+              </p>
             )}
             {ocrRows && (
               <div className="flex flex-col gap-2">
-                <p className="text-neutral-400 text-xs">Draft results — review before applying:</p>
+                <p className="text-xs" style={inkSecondary}>
+                  Draft results — review before applying:
+                </p>
                 <div className="max-h-48 overflow-y-auto flex flex-col gap-1">
                   {ocrRows.map((r) => (
-                    <div key={r.hole} className="flex gap-2 text-sm text-neutral-300">
+                    <div key={r.hole} className="flex gap-2 text-sm" style={inkSecondary}>
                       <span className="w-10">#{r.hole}</span>
                       <span className="w-16">Par {r.par ?? '?'}</span>
                       <span className="w-20">{r.yardage ?? '?'} yd</span>
@@ -551,23 +591,27 @@ export function CourseBuilder() {
 
           <div className="flex flex-col gap-2">
             {holes.map((h) => (
-              <div key={h.number} className="bg-neutral-900 rounded-xl p-3 flex items-center gap-3">
-                <span className="text-white font-semibold w-8">#{h.number}</span>
-                <label className="flex items-center gap-1 text-neutral-400 text-sm">
+              <div key={h.number} className="glass rounded-xl p-3 flex items-center gap-3">
+                <span className="font-semibold w-8" style={ink}>
+                  #{h.number}
+                </span>
+                <label className="flex items-center gap-1 text-sm" style={inkSecondary}>
                   Par
                   <input
                     type="number"
-                    className="w-12 bg-neutral-800 rounded px-1 py-1 text-white text-center"
+                    className="w-12 glass-solid rounded px-1 py-1 text-center"
+                    style={ink}
                     value={h.par}
                     onChange={(e) => updateHole(h.number, { par: Number(e.target.value) })}
                   />
                 </label>
                 {tees.map((t) => (
-                  <label key={t.id} className="flex items-center gap-1 text-neutral-400 text-xs">
+                  <label key={t.id} className="flex items-center gap-1 text-xs" style={inkSecondary}>
                     {t.name}
                     <input
                       type="number"
-                      className="w-14 bg-neutral-800 rounded px-1 py-1 text-white text-center"
+                      className="w-14 glass-solid rounded px-1 py-1 text-center"
+                      style={ink}
                       value={h.yardageByTee[t.id] ?? ''}
                       onChange={(e) =>
                         updateHole(h.number, {

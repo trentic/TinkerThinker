@@ -47,38 +47,55 @@ export function CoursePreview() {
     navigate(`/round/${id}`)
   }
 
-  if (!course) return <div className="p-4 text-neutral-500">Loading…</div>
+  if (!course)
+    return (
+      <div className="p-4" style={{ color: 'var(--ink-muted)' }}>
+        Loading…
+      </div>
+    )
 
   const front = holes.filter((h) => h.number <= 9)
   const back = holes.filter((h) => h.number > 9)
   const yardageTotal = (list: Hole[]) =>
     selectedTeeId ? list.reduce((sum, h) => sum + (h.yardageByTee[selectedTeeId] ?? 0), 0) : 0
   const parTotal = (list: Hole[]) => list.reduce((sum, h) => sum + h.par, 0)
+  const muted = { color: 'var(--ink-muted)' }
+  const ink = { color: 'var(--ink)' }
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4 pb-24">
       <div>
-        <h1 className="text-2xl font-bold text-white mt-2">{course.name}</h1>
-        <p className="text-neutral-500 text-sm">{course.holeCount} holes</p>
+        <h1 className="text-2xl font-bold mt-2" style={ink}>
+          {course.name}
+        </h1>
+        <p className="text-sm" style={muted}>
+          {course.holeCount} holes
+        </p>
       </div>
 
       {summary && summary.roundsPlayed > 0 && (
-        <div className="bg-neutral-900 rounded-2xl p-4 flex justify-between text-sm">
+        <div className="glass rounded-2xl p-4 flex justify-between text-sm">
           <div>
-            <div className="text-neutral-500">Rounds here</div>
-            <div className="text-white font-semibold">{summary.roundsPlayed}</div>
+            <div style={muted}>Rounds here</div>
+            <div className="font-semibold" style={ink}>
+              {summary.roundsPlayed}
+            </div>
           </div>
           <div>
-            <div className="text-neutral-500">Avg to par</div>
-            <div className="text-white font-semibold">{toParLabel(Math.round(summary.avgToPar ?? 0))}</div>
+            <div style={muted}>Avg to par</div>
+            <div className="font-semibold" style={ink}>
+              {toParLabel(Math.round(summary.avgToPar ?? 0))}
+            </div>
           </div>
           <div>
-            <div className="text-neutral-500">Best</div>
-            <div className="text-white font-semibold">{toParLabel(summary.bestToPar ?? 0)}</div>
+            <div style={muted}>Best</div>
+            <div className="font-semibold" style={ink}>
+              {toParLabel(summary.bestToPar ?? 0)}
+            </div>
           </div>
           <div>
-            <div className="text-neutral-500">Last played</div>
-            <div className="text-white font-semibold">
+            <div style={muted}>Last played</div>
+            <div className="font-semibold" style={ink}>
               {summary.lastPlayedAt ? new Date(summary.lastPlayedAt).toLocaleDateString() : '—'}
             </div>
           </div>
@@ -91,10 +108,12 @@ export function CoursePreview() {
             <button
               key={t.id}
               onClick={() => setSelectedTeeId(t.id)}
-              className={`min-h-10 px-4 rounded-lg text-sm font-medium ${
-                selectedTeeId === t.id ? 'text-white' : 'bg-neutral-800 text-neutral-400'
-              }`}
-              style={selectedTeeId === t.id ? { backgroundColor: t.color } : undefined}
+              className="min-h-10 px-4 rounded-lg text-sm font-medium"
+              style={
+                selectedTeeId === t.id
+                  ? { backgroundColor: t.color, color: '#ffffff' }
+                  : { background: 'rgba(255,255,255,0.5)', color: 'var(--ink-muted)' }
+              }
             >
               {t.name}
             </button>
@@ -107,7 +126,7 @@ export function CoursePreview() {
           <div key={i} className="overflow-x-auto">
             <table className="w-full text-center text-sm">
               <thead>
-                <tr className="text-neutral-500">
+                <tr style={muted}>
                   <th className="text-left font-normal pl-1">Hole</th>
                   {half.map((h) => (
                     <td key={h.number}>{h.number}</td>
@@ -116,14 +135,16 @@ export function CoursePreview() {
                 </tr>
               </thead>
               <tbody>
-                <tr className="text-white">
-                  <th className="text-left font-normal pl-1 text-neutral-500">Par</th>
+                <tr style={ink}>
+                  <th className="text-left font-normal pl-1" style={muted}>
+                    Par
+                  </th>
                   {half.map((h) => (
                     <td key={h.number}>{h.par}</td>
                   ))}
                   <td className="font-semibold">{parTotal(half)}</td>
                 </tr>
-                <tr className="text-neutral-400">
+                <tr style={{ color: 'var(--ink-secondary)' }}>
                   <th className="text-left font-normal pl-1">Yards</th>
                   {half.map((h) => (
                     <td key={h.number}>{selectedTeeId ? (h.yardageByTee[selectedTeeId] ?? '—') : '—'}</td>
@@ -148,7 +169,9 @@ export function CoursePreview() {
         </BigButton>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-neutral-400 text-sm">How many holes today?</p>
+          <p className="text-sm" style={{ color: 'var(--ink-secondary)' }}>
+            How many holes today?
+          </p>
           <div className="grid grid-cols-3 gap-2">
             <BigButton onClick={() => startRound(Array.from({ length: 18 }, (_, i) => i + 1))}>
               All 18

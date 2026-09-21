@@ -28,13 +28,20 @@ export function Scorecard() {
     })()
   }, [roundId])
 
-  if (!round) return <div className="p-4 text-neutral-500">Loading…</div>
+  if (!round)
+    return (
+      <div className="p-4" style={{ color: 'var(--ink-muted)' }}>
+        Loading…
+      </div>
+    )
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
       <div>
-        <h1 className="text-2xl font-bold text-white mt-2">{course?.name ?? 'Deleted course'}</h1>
-        <p className="text-neutral-500 text-sm">
+        <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>
+          {course?.name ?? 'Deleted course'}
+        </h1>
+        <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>
           {new Date(round.date).toLocaleDateString()} · {tee?.name ?? ''} tees
         </p>
       </div>
@@ -44,7 +51,11 @@ export function Scorecard() {
       {!round.completed && (
         <Link
           to={`/round/${round.id}`}
-          className="text-center min-h-14 rounded-2xl bg-green-600 text-white font-semibold flex items-center justify-center"
+          className="text-center min-h-14 rounded-2xl font-semibold flex items-center justify-center text-white"
+          style={{
+            background: 'linear-gradient(180deg, #8CF0A8 0%, #34C864 48%, #1E9E4A 100%)',
+            boxShadow: '0 8px 16px rgba(20,120,60,0.35)',
+          }}
         >
           Resume round
         </Link>

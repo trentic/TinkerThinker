@@ -8,12 +8,18 @@ interface ModalProps {
 
 export function Modal({ title, children, onClose }: ModalProps) {
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
+    <div
+      className="sheet-backdrop fixed inset-0 flex items-end sm:items-center justify-center z-50"
+      style={{ background: 'rgba(10, 60, 40, 0.35)', backdropFilter: 'blur(6px)' }}
+      onClick={onClose}
+    >
       <div
-        className="bg-neutral-900 rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md"
+        className="glass sheet-panel rounded-t-3xl sm:rounded-3xl p-5 w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-white font-semibold text-lg mb-3">{title}</div>
+        <div style={{ color: 'var(--ink)' }} className="font-bold text-lg mb-3">
+          {title}
+        </div>
         {children}
       </div>
     </div>

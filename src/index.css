@@ -1,13 +1,28 @@
 @import 'tailwindcss';
 
+/* Frutiger Aero: glossy glass surfaces over a green-dominant sky-to-turf
+   gradient. Green is the app's home color; blue is reserved as a specific
+   accent (the round screen's primary "Mark my ball" action); red/orange
+   stays the semantic danger/hazard color throughout. */
 :root {
-  color-scheme: dark;
-  --color-fairway: #16a34a;
-  --color-fairway-dark: #14532d;
-  --color-hazard: #2563eb;
-  --color-danger: #dc2626;
-  --color-bg: #0a0f0a;
-  --color-surface: #131a13;
+  color-scheme: light;
+
+  --aero-bg-top: #5fd6b8;
+  --aero-bg-mid: #8be89f;
+  --aero-bg-low: #d7f7dd;
+  --aero-bg-bottom: #f3fbf0;
+
+  --ink: #0d6b3f;
+  --ink-secondary: #2d8a5c;
+  --ink-muted: #4c9c78;
+
+  --glass-shadow: rgba(10, 110, 70, 0.18);
+  --glass-shadow-soft: rgba(10, 110, 70, 0.12);
+
+  --color-green: #1c9e5a;
+  --color-green-dark: #14532d;
+  --color-blue: #1b6fc2;
+  --color-danger: #e8431f;
 }
 
 html,
@@ -15,14 +30,107 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: var(--color-bg);
-  color: #f3f4f6;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  color: var(--ink-secondary);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+}
+
+body {
+  background: linear-gradient(
+    180deg,
+    var(--aero-bg-top) 0%,
+    var(--aero-bg-mid) 24%,
+    var(--aero-bg-low) 58%,
+    var(--aero-bg-bottom) 100%
+  );
+  background-attachment: fixed;
 }
 
 /* On-course UI needs big, glove/sun friendly hit targets */
 button {
   touch-action: manipulation;
+  font-family: inherit;
+}
+
+/* Reusable glass surface — the base every card/panel/sheet builds on. */
+.glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.22));
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    0 10px 24px var(--glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.glass-solid {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 6px 16px var(--glass-shadow-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* Glossy highlight streak overlaid on the top of a pill button. */
+.gloss-highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.75) 0%,
+    rgba(255, 255, 255, 0.15) 48%,
+    rgba(255, 255, 255, 0) 55%
+  );
+}
+
+@keyframes aero-shimmer {
+  0% {
+    background-position: -300px 0;
+  }
+  100% {
+    background-position: 300px 0;
+  }
+}
+
+@keyframes sheet-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-pop-in {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.sheet-backdrop {
+  animation: backdrop-fade-in 0.2s ease-out both;
+}
+
+.sheet-panel {
+  animation: sheet-slide-up 0.36s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.35) 25%, rgba(255, 255, 255, 0.65) 37%, rgba(255, 255, 255, 0.35) 63%);
+  background-size: 600px 100%;
+  animation: aero-shimmer 1.4s ease-in-out infinite;
 }

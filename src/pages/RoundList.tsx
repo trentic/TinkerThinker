@@ -9,19 +9,31 @@ export function RoundList() {
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-3">
-      <h1 className="text-2xl font-bold text-white mt-2">Rounds</h1>
-      {rounds?.length === 0 && <p className="text-neutral-500 text-sm">No rounds yet.</p>}
+      <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>
+        Rounds
+      </h1>
+      {rounds?.length === 0 && (
+        <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>
+          No rounds yet.
+        </p>
+      )}
       {rounds?.map((round) => (
         <Link
           key={round.id}
           to={round.completed ? `/round/${round.id}/scorecard` : `/round/${round.id}`}
-          className="bg-neutral-900 rounded-2xl p-4 flex justify-between items-center"
+          className="glass rounded-2xl p-4 flex justify-between items-center"
         >
           <div>
-            <div className="font-semibold text-white">{courseName(round.courseId)}</div>
-            <div className="text-neutral-500 text-sm">{new Date(round.date).toLocaleDateString()}</div>
+            <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+              {courseName(round.courseId)}
+            </div>
+            <div className="text-sm" style={{ color: 'var(--ink-muted)' }}>
+              {new Date(round.date).toLocaleDateString()}
+            </div>
           </div>
-          <div className="text-neutral-500 text-sm">{round.completed ? 'Finished' : 'In progress'}</div>
+          <div className="text-sm" style={{ color: 'var(--ink-muted)' }}>
+            {round.completed ? 'Finished' : 'In progress'}
+          </div>
         </Link>
       ))}
     </div>

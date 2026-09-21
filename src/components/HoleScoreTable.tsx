@@ -15,6 +15,8 @@ interface HoleScoreTableProps {
 export function HoleScoreTable({ scores, showTotal = true }: HoleScoreTableProps) {
   const front = scores.filter((s) => s.holeNumber <= 9)
   const back = scores.filter((s) => s.holeNumber > 9)
+  const muted = { color: 'var(--ink-muted)' }
+  const ink = { color: 'var(--ink)' }
 
   return (
     <div className="flex flex-col gap-4">
@@ -23,14 +25,14 @@ export function HoleScoreTable({ scores, showTotal = true }: HoleScoreTableProps
           <div key={i} className="overflow-x-auto">
             <table className="w-full text-center text-sm">
               <thead>
-                <tr className="text-neutral-500">
+                <tr style={muted}>
                   <th className="text-left font-normal pl-1">Hole</th>
                   {half.map((s) => (
                     <td key={s.holeNumber}>{s.holeNumber}</td>
                   ))}
                   <td className="font-semibold">{i === 0 ? 'OUT' : 'IN'}</td>
                 </tr>
-                <tr className="text-neutral-500">
+                <tr style={muted}>
                   <th className="text-left font-normal pl-1">Par</th>
                   {half.map((s) => (
                     <td key={s.holeNumber}>{s.par}</td>
@@ -39,13 +41,19 @@ export function HoleScoreTable({ scores, showTotal = true }: HoleScoreTableProps
                 </tr>
               </thead>
               <tbody>
-                <tr className="text-white font-semibold">
-                  <th className="text-left font-normal pl-1 text-neutral-500">Score</th>
+                <tr className="font-semibold" style={ink}>
+                  <th className="text-left font-normal pl-1" style={muted}>
+                    Score
+                  </th>
                   {half.map((s) => (
                     <td
                       key={s.holeNumber}
-                      className={
-                        s.strokes < s.par ? 'text-green-400' : s.strokes > s.par ? 'text-red-400' : ''
+                      style={
+                        s.strokes < s.par
+                          ? { color: 'var(--color-green)' }
+                          : s.strokes > s.par
+                            ? { color: 'var(--color-danger)' }
+                            : undefined
                       }
                     >
                       {s.strokes}
@@ -53,7 +61,7 @@ export function HoleScoreTable({ scores, showTotal = true }: HoleScoreTableProps
                   ))}
                   <td>{sum(half, 'strokes')}</td>
                 </tr>
-                <tr className="text-neutral-500">
+                <tr style={muted}>
                   <th className="text-left font-normal pl-1">Putts</th>
                   {half.map((s) => (
                     <td key={s.holeNumber}>{s.putts}</td>
@@ -67,9 +75,9 @@ export function HoleScoreTable({ scores, showTotal = true }: HoleScoreTableProps
       )}
 
       {showTotal && scores.length > 0 && (
-        <div className="bg-neutral-900 rounded-2xl p-4 flex justify-between items-center">
-          <span className="text-neutral-400">Total</span>
-          <span className="text-2xl font-bold text-white">
+        <div className="glass rounded-2xl p-4 flex justify-between items-center">
+          <span style={muted}>Total</span>
+          <span className="text-2xl font-bold" style={ink}>
             {sum(scores, 'strokes')} ({toParLabel(sum(scores, 'strokes') - sum(scores, 'par'))})
           </span>
         </div>

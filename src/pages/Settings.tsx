@@ -19,6 +19,13 @@ import {
   pullBackupFromDrive,
 } from '../lib/googleDrive'
 
+const TOGGLE_ON = 'text-white'
+const TOGGLE_OFF_STYLE = { background: 'rgba(255,255,255,0.5)', color: 'var(--ink-muted)' }
+const TOGGLE_ON_STYLE = {
+  background: 'linear-gradient(180deg, #8CF0A8 0%, #34C864 48%, #1E9E4A 100%)',
+  boxShadow: '0 4px 10px rgba(20,120,60,0.35)',
+}
+
 export function Settings() {
   const fileInput = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
@@ -120,12 +127,16 @@ export function Settings() {
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
-      <h1 className="text-2xl font-bold text-white mt-2">Settings</h1>
+      <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>
+        Settings
+      </h1>
 
-      <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-3">
+      <div className="glass rounded-2xl p-4 flex flex-col gap-3">
         <div>
-          <div className="font-semibold text-white">My bag</div>
-          <p className="text-neutral-400 text-sm mt-1">
+          <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+            My bag
+          </div>
+          <p className="text-sm mt-1" style={{ color: 'var(--ink-secondary)' }}>
             Pick the clubs you carry. If you already know a club's yardage, type it in — it'll
             show up in Stats until your real GPS-tracked shots take over.
           </p>
@@ -137,9 +148,8 @@ export function Settings() {
               <div key={club} className="flex items-center gap-3">
                 <button
                   onClick={() => toggleInBag(club)}
-                  className={`min-h-11 flex-1 px-3 rounded-xl text-sm font-medium text-left ${
-                    entry.inBag ? 'bg-green-600 text-white' : 'bg-neutral-800 text-neutral-400'
-                  }`}
+                  className={`min-h-11 flex-1 px-3 rounded-xl text-sm font-medium text-left ${entry.inBag ? TOGGLE_ON : ''}`}
+                  style={entry.inBag ? TOGGLE_ON_STYLE : TOGGLE_OFF_STYLE}
                 >
                   {club}
                 </button>
@@ -147,7 +157,8 @@ export function Settings() {
                   <input
                     type="number"
                     placeholder="yards"
-                    className="w-20 bg-neutral-800 rounded-lg px-2 py-2 text-white text-center text-sm"
+                    className="w-20 glass-solid rounded-lg px-2 py-2 text-center text-sm"
+                    style={{ color: 'var(--ink)' }}
                     value={entry.manualYardage ?? ''}
                     onChange={(e) =>
                       setManualYardage(club, e.target.value === '' ? undefined : Number(e.target.value))
@@ -160,31 +171,34 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="bg-neutral-900 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div className="glass rounded-2xl p-4 flex items-center justify-between gap-3">
         <div>
-          <div className="font-semibold text-white">Mulligan button</div>
-          <p className="text-neutral-400 text-sm mt-1">
+          <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+            Mulligan button
+          </div>
+          <p className="text-sm mt-1" style={{ color: 'var(--ink-secondary)' }}>
             Shows an undo button during a round to redo the last stroke without a penalty.
           </p>
         </div>
         <button
           onClick={toggleMulligan}
-          className={`min-h-10 px-4 rounded-full text-sm font-semibold shrink-0 ${
-            mulliganEnabled ? 'bg-green-600 text-white' : 'bg-neutral-800 text-neutral-400'
-          }`}
+          className={`min-h-10 px-4 rounded-full text-sm font-semibold shrink-0 ${mulliganEnabled ? TOGGLE_ON : ''}`}
+          style={mulliganEnabled ? TOGGLE_ON_STYLE : TOGGLE_OFF_STYLE}
         >
           {mulliganEnabled ? 'On' : 'Off'}
         </button>
       </div>
 
-      <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-3">
+      <div className="glass rounded-2xl p-4 flex flex-col gap-3">
         <div>
-          <div className="font-semibold text-white">Backup & restore</div>
-          <p className="text-neutral-400 text-sm mt-1">
+          <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+            Backup & restore
+          </div>
+          <p className="text-sm mt-1" style={{ color: 'var(--ink-secondary)' }}>
             Everything is stored only on this device. Back up regularly, and restore after a
             reset or on a new device.
           </p>
-          <p className="text-neutral-500 text-xs mt-1">
+          <p className="text-xs mt-1" style={{ color: 'var(--ink-muted)' }}>
             Last backup: {lastBackup ? new Date(lastBackup).toLocaleString() : 'never'}
           </p>
         </div>
@@ -202,20 +216,26 @@ export function Settings() {
             if (file) void handleImportFile(file)
           }}
         />
-        {status && <p className="text-sm text-green-400">{status}</p>}
+        {status && (
+          <p className="text-sm" style={{ color: 'var(--color-green)' }}>
+            {status}
+          </p>
+        )}
       </div>
 
-      <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-3">
+      <div className="glass rounded-2xl p-4 flex flex-col gap-3">
         <div>
-          <div className="font-semibold text-white">Google Drive backup</div>
+          <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+            Google Drive backup
+          </div>
           {isDriveConfigured() ? (
-            <p className="text-neutral-400 text-sm mt-1">
+            <p className="text-sm mt-1" style={{ color: 'var(--ink-secondary)' }}>
               Stores one plain-text file in your Drive and keeps updating that same file — it
               never creates extras. Pulls it automatically when you open the app, so a new
               device picks up where you left off.
             </p>
           ) : (
-            <p className="text-neutral-400 text-sm mt-1">
+            <p className="text-sm mt-1" style={{ color: 'var(--ink-secondary)' }}>
               Not set up for this build. Whoever deployed the app needs to create a free Google
               OAuth Client ID and set it as <code>VITE_GOOGLE_CLIENT_ID</code> — see the README.
             </p>
@@ -237,7 +257,8 @@ export function Settings() {
                 <button
                   onClick={handleDisconnectDrive}
                   disabled={driveBusy}
-                  className="text-neutral-500 text-sm underline"
+                  className="text-sm underline"
+                  style={{ color: 'var(--ink-muted)' }}
                 >
                   Disconnect Google Drive
                 </button>
@@ -247,15 +268,21 @@ export function Settings() {
                 {driveBusy ? 'Connecting…' : 'Connect Google Drive'}
               </BigButton>
             )}
-            {driveStatus && <p className="text-sm text-green-400">{driveStatus}</p>}
+            {driveStatus && (
+              <p className="text-sm" style={{ color: 'var(--color-green)' }}>
+                {driveStatus}
+              </p>
+            )}
           </>
         )}
       </div>
 
-      <div className="bg-amber-950/40 border border-amber-800 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div className="glass-solid rounded-2xl p-4 flex items-center justify-between gap-3">
         <div>
-          <div className="font-semibold text-amber-200">🐛 Debug: simulate location</div>
-          <p className="text-amber-200/70 text-sm mt-1">
+          <div className="font-semibold" style={{ color: '#8a5a12' }}>
+            Debug: simulate location
+          </div>
+          <p className="text-sm mt-1" style={{ color: '#8a5a12', opacity: 0.75 }}>
             Testing only. Replaces real GPS everywhere in the app with a position you control
             from a panel on the round screen — no need to actually be on a course. Turn this off
             when you're done, or every round you start will use fake positions.
@@ -263,9 +290,12 @@ export function Settings() {
         </div>
         <button
           onClick={toggleDebugLocation}
-          className={`min-h-10 px-4 rounded-full text-sm font-semibold shrink-0 ${
-            debugLocationEnabled ? 'bg-amber-600 text-white' : 'bg-neutral-800 text-neutral-400'
-          }`}
+          className="min-h-10 px-4 rounded-full text-sm font-semibold shrink-0"
+          style={
+            debugLocationEnabled
+              ? { background: 'linear-gradient(180deg, #FFD08A, #E8A020)', color: '#5c3a00' }
+              : TOGGLE_OFF_STYLE
+          }
         >
           {debugLocationEnabled ? 'On' : 'Off'}
         </button>

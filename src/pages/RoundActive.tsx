@@ -28,6 +28,20 @@ const PENALTY_LABELS: Record<PenaltyType, string> = {
   unplayable: 'Unplayable lie',
 }
 
+const ink = { color: 'var(--ink)' }
+const inkSecondary = { color: 'var(--ink-secondary)' }
+const inkMuted = { color: 'var(--ink-muted)' }
+const amberText = { color: '#8a5a12' }
+const amberTextSoft = { color: '#8a5a12', opacity: 0.75 }
+const toggleOn = {
+  background: 'linear-gradient(180deg, #8CF0A8 0%, #34C864 48%, #1E9E4A 100%)',
+  boxShadow: '0 4px 10px rgba(20,120,60,0.35)',
+  color: '#ffffff',
+}
+const toggleOff = { background: 'rgba(255,255,255,0.5)', color: 'var(--ink-muted)' }
+const amberToggleOn = { background: 'linear-gradient(180deg, #FFD08A, #E8A020)', color: '#5c3a00' }
+const amberToggleOff = { background: 'rgba(255,255,255,0.5)', color: '#8a5a12' }
+
 type HistoryEntry =
   | { kind: 'shot'; shotId: string; prevLastMarkedPos: LatLng | null; wasFirstShot: boolean }
   | { kind: 'penalty'; shotId: string; penaltyType: PenaltyType }
@@ -441,7 +455,11 @@ export function RoundActive() {
   }
 
   if (!round || !course || !tee || !currentHole) {
-    return <div className="p-4 text-neutral-500">Loading round…</div>
+    return (
+      <div className="p-4" style={inkMuted}>
+        Loading round…
+      </div>
+    )
   }
 
   const mapCenter = currentHole.teeCoords[tee.id] ?? {
@@ -473,17 +491,21 @@ export function RoundActive() {
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-3 pb-24">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">
+        <h1 className="text-2xl font-bold" style={ink}>
           Hole {currentHole.number} · Par {currentHole.par}
         </h1>
-        <span className="text-neutral-400 text-sm">{tee.name} tees</span>
+        <span className="text-sm" style={inkSecondary}>
+          {tee.name} tees
+        </span>
       </div>
 
       {holeSummary ? (
         <div className="flex flex-col gap-3">
-          <div className="bg-neutral-900 rounded-2xl p-4 text-center">
-            <div className="text-neutral-400 text-sm">Hole {currentHole.number} complete</div>
-            <div className="text-3xl font-bold text-white mt-1">
+          <div className="glass rounded-2xl p-4 text-center">
+            <div className="text-sm" style={inkSecondary}>
+              Hole {currentHole.number} complete
+            </div>
+            <div className="text-3xl font-bold mt-1" style={ink}>
               {strokes} ({toParLabel(strokes - currentHole.par)})
             </div>
           </div>
@@ -503,13 +525,14 @@ export function RoundActive() {
       ) : (
         <>
           {debugLocationEnabled && (
-            <div className="bg-amber-950/40 border border-amber-800 rounded-xl p-3 flex flex-col gap-3">
+            <div className="glass-solid rounded-xl p-3 flex flex-col gap-3">
               <button
                 onClick={() => setShowDebugPanel((v) => !v)}
-                className="flex items-center justify-between text-amber-200 text-sm font-semibold"
+                className="flex items-center justify-between text-sm font-semibold"
+                style={amberText}
               >
                 <span>
-                  🐛 Simulated location
+                  Simulated location
                   {myPos && ` · ${myPos.lat.toFixed(5)}, ${myPos.lng.toFixed(5)}`}
                 </span>
                 <span>{showDebugPanel ? '▲' : '▼'}</span>
@@ -524,16 +547,17 @@ export function RoundActive() {
                       onMapClick={moveDebugPosition}
                     />
                   </div>
-                  <p className="text-amber-200/70 text-xs">Tap the map to teleport there, or nudge:</p>
+                  <p className="text-xs" style={amberTextSoft}>
+                    Tap the map to teleport there, or nudge:
+                  </p>
 
                   <div className="flex justify-center gap-2">
                     {[5, 10, 25].map((yards) => (
                       <button
                         key={yards}
                         onClick={() => setDebugStepYards(yards)}
-                        className={`min-h-8 px-3 rounded-full text-xs font-medium ${
-                          debugStepYards === yards ? 'bg-amber-600 text-white' : 'bg-amber-900 text-amber-300'
-                        }`}
+                        className="min-h-8 px-3 rounded-full text-xs font-medium"
+                        style={debugStepYards === yards ? amberToggleOn : amberToggleOff}
                       >
                         {yards}y
                       </button>
@@ -544,28 +568,32 @@ export function RoundActive() {
                     <div />
                     <button
                       onClick={() => nudgeDebugPosition(0, debugStepYards)}
-                      className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                      className="rounded-lg py-3 text-lg"
+                      style={amberToggleOn}
                     >
                       ▲
                     </button>
                     <div />
                     <button
                       onClick={() => nudgeDebugPosition(270, debugStepYards)}
-                      className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                      className="rounded-lg py-3 text-lg"
+                      style={amberToggleOn}
                     >
                       ◀
                     </button>
                     <div />
                     <button
                       onClick={() => nudgeDebugPosition(90, debugStepYards)}
-                      className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                      className="rounded-lg py-3 text-lg"
+                      style={amberToggleOn}
                     >
                       ▶
                     </button>
                     <div />
                     <button
                       onClick={() => nudgeDebugPosition(180, debugStepYards)}
-                      className="bg-amber-800 text-white rounded-lg py-3 text-lg"
+                      className="rounded-lg py-3 text-lg"
+                      style={amberToggleOn}
                     >
                       ▼
                     </button>
@@ -580,7 +608,7 @@ export function RoundActive() {
                       Reset to tee
                     </BigButton>
                   ) : (
-                    <p className="text-amber-200/70 text-xs text-center">
+                    <p className="text-xs text-center" style={amberTextSoft}>
                       This tee hasn't been set yet — use "Set tee" on the hole screen once you're there.
                     </p>
                   )}
@@ -610,25 +638,33 @@ export function RoundActive() {
                   </div>
                 )}
               </div>
-              <p className="text-neutral-500 text-xs -mt-1">Tap where you're aiming.</p>
+              <p className="text-xs -mt-1" style={inkMuted}>
+                Tap where you're aiming.
+              </p>
 
               {yardageLoading && (
-                <div className="text-neutral-400 text-sm">Calculating plays-like yardage…</div>
+                <div className="text-sm" style={inkSecondary}>
+                  Calculating plays-like yardage…
+                </div>
               )}
               {playsLike && !yardageLoading && (
-                <div className="bg-neutral-900 rounded-2xl p-4 flex flex-col gap-1">
-                  <div className="text-3xl font-bold text-white">{playsLike.playsLikeYards} yd plays like</div>
-                  <div className="text-neutral-500 text-sm">
+                <div className="glass rounded-2xl p-4 flex flex-col gap-1">
+                  <div className="text-3xl font-bold" style={ink}>
+                    {playsLike.playsLikeYards} yd plays like
+                  </div>
+                  <div className="text-sm" style={inkMuted}>
                     {playsLike.actualYards} yd straight · {playsLike.elevationAdjustYards >= 0 ? '+' : ''}
                     {playsLike.elevationAdjustYards} elevation · {playsLike.windAdjustYards >= 0 ? '+' : ''}
                     {playsLike.windAdjustYards} wind
                   </div>
                   {wind && (
-                    <div className="text-neutral-500 text-sm">
-                      💨 {Math.round(wind.speedMph)} mph from {windCompassLabel(wind.directionDeg)}
+                    <div className="text-sm" style={inkMuted}>
+                      {Math.round(wind.speedMph)} mph from {windCompassLabel(wind.directionDeg)}
                     </div>
                   )}
-                  <div className="text-neutral-600 text-xs">Estimate — not laser-precision.</div>
+                  <div className="text-xs" style={inkMuted}>
+                    Estimate — not laser-precision.
+                  </div>
                 </div>
               )}
             </div>
@@ -645,15 +681,22 @@ export function RoundActive() {
                   <div className="w-1/2 pr-1 flex flex-col gap-3">
                     <button
                       onClick={() => setPanel('clubs')}
-                      className="self-end text-neutral-400 text-sm underline"
+                      className="self-end text-sm underline"
+                      style={inkSecondary}
                     >
-                      🏌️ My bag ›
+                      My bag ›
                     </button>
 
                     {armedClub && (
-                      <div className="flex items-center justify-between bg-green-900/40 border border-green-700 rounded-xl px-3 py-2">
-                        <span className="text-green-300 text-sm font-medium">Using {armedClub}</span>
-                        <button onClick={() => setArmedClub(null)} className="text-green-400 text-xs underline">
+                      <div className="flex items-center justify-between glass-solid rounded-xl px-3 py-2">
+                        <span className="text-sm font-medium" style={{ color: 'var(--color-green)' }}>
+                          Using {armedClub}
+                        </span>
+                        <button
+                          onClick={() => setArmedClub(null)}
+                          className="text-xs underline"
+                          style={{ color: 'var(--color-green)' }}
+                        >
                           Clear
                         </button>
                       </div>
@@ -674,7 +717,7 @@ export function RoundActive() {
                         </BigButton>
 
                         <div className="grid grid-cols-2 gap-3">
-                          <BigButton onClick={handleMarkShot}>Mark my ball (+1)</BigButton>
+                          <BigButton variant="blue" onClick={handleMarkShot}>Mark my ball (+1)</BigButton>
                           <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
                             Lost / Hazard
                           </BigButton>
@@ -685,9 +728,13 @@ export function RoundActive() {
                       </>
                     ) : (
                       <div className="flex flex-col gap-3">
-                        <div className="bg-neutral-900 rounded-2xl p-6 text-center">
-                          <div className="text-5xl font-bold text-white">{putts}</div>
-                          <div className="text-neutral-500 text-sm mt-1">putts this hole</div>
+                        <div className="glass rounded-2xl p-6 text-center">
+                          <div className="text-5xl font-bold" style={ink}>
+                            {putts}
+                          </div>
+                          <div className="text-sm mt-1" style={inkMuted}>
+                            putts this hole
+                          </div>
                         </div>
                         <BigButton onClick={addPutt}>+1 Putt</BigButton>
                         <BigButton variant="danger" onClick={() => setShowPenaltyMenu(true)}>
@@ -708,10 +755,10 @@ export function RoundActive() {
 
                   {/* Clubs pane */}
                   <div className="w-1/2 pl-1 flex flex-col gap-3">
-                    <button onClick={() => setPanel('shot')} className="text-neutral-400 text-sm underline">
+                    <button onClick={() => setPanel('shot')} className="text-sm underline" style={inkSecondary}>
                       ‹ Back
                     </button>
-                    <p className="text-neutral-500 text-xs -mt-1">
+                    <p className="text-xs -mt-1" style={inkMuted}>
                       Tap the club you're using. It'll tag your next marked shot for club-distance stats.
                     </p>
                     <div className="grid grid-cols-3 gap-2">
@@ -719,9 +766,8 @@ export function RoundActive() {
                         <button
                           key={club}
                           onClick={() => selectClub(club)}
-                          className={`min-h-14 rounded-xl text-sm font-semibold ${
-                            armedClub === club ? 'bg-green-600 text-white' : 'bg-neutral-800 text-neutral-200'
-                          }`}
+                          className="min-h-14 rounded-xl text-sm font-semibold"
+                          style={armedClub === club ? toggleOn : toggleOff}
                         >
                           {club}
                         </button>
@@ -731,9 +777,13 @@ export function RoundActive() {
                 </div>
               </div>
 
-              <div className="bg-neutral-900 rounded-2xl p-4 flex justify-between items-center">
-                <span className="text-neutral-400 text-sm">Strokes this hole</span>
-                <span className="text-2xl font-bold text-white">{strokes}</span>
+              <div className="glass rounded-2xl p-4 flex justify-between items-center">
+                <span className="text-sm" style={inkSecondary}>
+                  Strokes this hole
+                </span>
+                <span className="text-2xl font-bold" style={ink}>
+                  {strokes}
+                </span>
               </div>
 
               <BigButton onClick={finishHole} disabled={strokes === 0}>
