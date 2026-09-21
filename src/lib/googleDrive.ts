@@ -16,6 +16,7 @@
 // tap instead of truly invisible sync.
 
 import { buildBackupPayload, mergeBackupPayload, type BackupFile } from '../db/backup'
+import { isDebugLocationEnabled } from './settings'
 
 interface TokenResponse {
   access_token?: string
@@ -213,6 +214,14 @@ async function getDriveFileContent(token: string, fileId: string): Promise<strin
 }
 
 export async function pushBackupToDrive(): Promise<void> {
+  // Debug location produces fake GPS-tracked rounds for testing — never let
+  // that data reach a real backup. Guarded here (the single choke point
+  // every push call site goes through) rather than at each call site, so
+  // it can't be missed.
+  if (isDebugLocationEnabled()) {
+    throw new Error('Debug location is on, so Drive backup is paused — turn it off in Settings to back up again.')
+  }
+
   const token = await getAccessToken(true)
   const content = JSON.stringify(await buildBackupPayload())
 

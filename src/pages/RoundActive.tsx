@@ -21,6 +21,7 @@ import { COMMON_CLUBS } from '../lib/clubs'
 import { isDebugLocationEnabled, isMulliganEnabled } from '../lib/settings'
 import { getMockPosition, setMockPosition } from '../lib/debugLocation'
 import { toParLabel } from '../lib/format'
+import { isDriveConnected, pushBackupToDrive } from '../lib/googleDrive'
 
 const PENALTY_LABELS: Record<PenaltyType, string> = {
   water: 'Water hazard',
@@ -421,6 +422,10 @@ export function RoundActive() {
     const next = holesList[idx + 1]
     if (!next) {
       await db.rounds.update(round.id, { completed: true })
+      // Best-effort, non-blocking: the finished round's scores/stats should
+      // reach Drive without the user having to remember "Back up now", but
+      // this must never hold up getting to the scorecard.
+      if (isDriveConnected()) pushBackupToDrive().catch(() => {})
       navigate(`/round/${round.id}/scorecard`)
       return
     }

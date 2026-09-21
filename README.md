@@ -65,9 +65,12 @@ how Drive works for any app, not a cost we're choosing to pay around:
 
 Once configured, Settings shows a "Connect Google Drive" button. It stores
 exactly one plain-text JSON file in Drive (`fairway-backup.json`) and always
-updates that same file — it never creates duplicates. The app pulls it
-automatically (silently, best-effort) each time it opens, merging by record
-ID so it can only add/update data, never delete anything.
+updates that same file — it never creates duplicates. Sync is automatic in
+both directions, silently and best-effort: the app pulls on every open, and
+pushes right after a round is finished, merging by record ID so it can only
+add/update data, never delete anything. "Back up now"/"Pull latest" in
+Settings are still there for pushing mid-round changes (bag edits, manual
+score fixes) or forcing a sync on demand.
 
 One real limitation: without a backend there's no refresh token, so silent
 re-auth depends on the browser allowing Google's background sign-in check.
