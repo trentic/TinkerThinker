@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { computeStats, computeClubDistances, type StatsSummary, type ClubStats } from '../lib/stats'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { computeStats, computeClubDistances } from '../lib/stats'
 import { toParLabel } from '../lib/format'
 
 function StatTile({ label, value }: { label: string; value: string }) {
@@ -19,13 +19,11 @@ const fmt = (n: number | null, digits = 1, suffix = '') =>
   n === null ? '—' : `${n.toFixed(digits)}${suffix}`
 
 export function Stats() {
-  const [stats, setStats] = useState<StatsSummary | null>(null)
-  const [clubs, setClubs] = useState<ClubStats[]>([])
-
-  useEffect(() => {
-    computeStats().then(setStats)
-    computeClubDistances().then(setClubs)
-  }, [])
+  // Live queries (not a one-shot effect) so this refreshes automatically
+  // after any data change — including a Google Drive pull or local backup
+  // restore, which write straight to IndexedDB without navigating here.
+  const stats = useLiveQuery(() => computeStats(), [])
+  const clubs = useLiveQuery(() => computeClubDistances(), []) ?? []
 
   if (!stats)
     return (

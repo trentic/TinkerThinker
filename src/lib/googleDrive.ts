@@ -230,7 +230,14 @@ export async function pullBackupFromDrive(interactive: boolean): Promise<boolean
   if (!isDriveConnected()) return false
   const token = await getAccessToken(interactive)
 
-  let fileId = localStorage.getItem(FILE_ID_KEY)
+  // An interactive pull ("Pull latest") is a deliberate "get me what's
+  // actually there right now" action, so it always re-resolves the file by
+  // name instead of trusting a locally cached ID — that cache can go stale
+  // if the file was ever trashed/recreated from another device, which
+  // would otherwise silently re-fetch old content and still report
+  // success. The silent auto-pull on app load keeps using the cache to
+  // stay fast and cheap.
+  let fileId = interactive ? null : localStorage.getItem(FILE_ID_KEY)
   if (!fileId) {
     fileId = await findExistingFileId(token)
     if (!fileId) return false

@@ -1,40 +1,39 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useParams, Link } from 'react-router-dom'
 import { db } from '../db/db'
-import type { Course, HoleScore, Round, Tee } from '../db/schema'
+import type { HoleScore } from '../db/schema'
 import { HoleScoreTable } from '../components/HoleScoreTable'
 import { EditHoleScoreModal } from '../components/EditHoleScoreModal'
 
 export function Scorecard() {
   const { roundId } = useParams<{ roundId: string }>()
-  const [round, setRound] = useState<Round | null>(null)
-  const [course, setCourse] = useState<Course | null>(null)
-  const [tee, setTee] = useState<Tee | null>(null)
-  const [scores, setScores] = useState<HoleScore[]>([])
   const [editingScore, setEditingScore] = useState<HoleScore | null>(null)
 
-  useEffect(() => {
-    if (!roundId) return
-    ;(async () => {
-      const r = await db.rounds.get(roundId)
-      if (!r) return
-      setRound(r)
-      const [c, t, s] = await Promise.all([
-        db.courses.get(r.courseId),
-        db.tees.get(r.teeId),
-        db.holeScores.where('roundId').equals(r.id).sortBy('holeNumber'),
-      ])
-      setCourse(c ?? null)
-      setTee(t ?? null)
-      setScores(s)
-    })()
+  // Live (not a one-shot effect) so this refreshes automatically after any
+  // data change — including a Google Drive pull or local backup restore,
+  // which write straight to IndexedDB without navigating here.
+  const data = useLiveQuery(async () => {
+    if (!roundId) return null
+    const round = await db.rounds.get(roundId)
+    if (!round) return null
+    const [course, tee, scores] = await Promise.all([
+      db.courses.get(round.courseId),
+      db.tees.get(round.teeId),
+      db.holeScores.where('roundId').equals(round.id).sortBy('holeNumber'),
+    ])
+    return { round, course: course ?? null, tee: tee ?? null, scores }
   }, [roundId])
 
   async function saveScore(updated: HoleScore) {
     await db.holeScores.put(updated)
-    setScores((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
     setEditingScore(null)
   }
+
+  const round = data?.round ?? null
+  const course = data?.course ?? null
+  const tee = data?.tee ?? null
+  const scores = data?.scores ?? []
 
   if (!round)
     return (

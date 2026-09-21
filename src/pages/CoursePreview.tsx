@@ -1,37 +1,38 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db, newId } from '../db/db'
-import type { Course, Hole, Tee } from '../db/schema'
+import type { Hole } from '../db/schema'
 import { BigButton } from '../components/BigButton'
-import { computeCourseSummary, type CourseSummary } from '../lib/courseStats'
+import { computeCourseSummary } from '../lib/courseStats'
 import { toParLabel } from '../lib/format'
 
 export function CoursePreview() {
   const { courseId } = useParams<{ courseId: string }>()
   const navigate = useNavigate()
-  const [course, setCourse] = useState<Course | null>(null)
-  const [tees, setTees] = useState<Tee[]>([])
-  const [holes, setHoles] = useState<Hole[]>([])
-  const [summary, setSummary] = useState<CourseSummary | null>(null)
-  const [selectedTeeId, setSelectedTeeId] = useState<string | null>(null)
+  // Live (not a one-shot effect) so this refreshes automatically after any
+  // data change — including a Google Drive pull or local backup restore,
+  // which write straight to IndexedDB without navigating here.
+  const data = useLiveQuery(async () => {
+    if (!courseId) return null
+    const [course, tees, holes, summary] = await Promise.all([
+      db.courses.get(courseId),
+      db.tees.where('courseId').equals(courseId).sortBy('order'),
+      db.holes.where('courseId').equals(courseId).sortBy('number'),
+      computeCourseSummary(courseId),
+    ])
+    return { course: course ?? null, tees, holes, summary }
+  }, [courseId])
+  // null means "no explicit pick yet" — defaults to the first tee below,
+  // derived at render rather than synced via an effect.
+  const [pickedTeeId, setPickedTeeId] = useState<string | null>(null)
   const [pickingHoles, setPickingHoles] = useState(false)
 
-  useEffect(() => {
-    if (!courseId) return
-    ;(async () => {
-      const [c, t, h, s] = await Promise.all([
-        db.courses.get(courseId),
-        db.tees.where('courseId').equals(courseId).sortBy('order'),
-        db.holes.where('courseId').equals(courseId).sortBy('number'),
-        computeCourseSummary(courseId),
-      ])
-      setCourse(c ?? null)
-      setTees(t)
-      setHoles(h)
-      setSummary(s)
-      setSelectedTeeId(t[0]?.id ?? null)
-    })()
-  }, [courseId])
+  const course = data?.course ?? null
+  const tees = data?.tees ?? []
+  const holes = data?.holes ?? []
+  const summary = data?.summary ?? null
+  const selectedTeeId = pickedTeeId ?? tees[0]?.id ?? null
 
   async function startRound(holeNumbers: number[]) {
     if (!course || !selectedTeeId) return
@@ -107,7 +108,7 @@ export function CoursePreview() {
           {tees.map((t) => (
             <button
               key={t.id}
-              onClick={() => setSelectedTeeId(t.id)}
+              onClick={() => setPickedTeeId(t.id)}
               className="min-h-10 px-4 rounded-lg text-sm font-medium"
               style={
                 selectedTeeId === t.id
