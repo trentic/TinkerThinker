@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { BigButton } from '../components/BigButton'
 import { Modal } from '../components/Modal'
 import { HoleScoreTable } from '../components/HoleScoreTable'
+import { EditHoleScoreModal } from '../components/EditHoleScoreModal'
 import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
 import type { Course, Hole, HoleScore, PenaltyType, Round, Tee } from '../db/schema'
@@ -94,6 +95,7 @@ export function RoundActive() {
   const [holeSummary, setHoleSummary] = useState<{ nextHole: Hole; allScores: HoleScore[] } | null>(null)
   const [nextTeeCooldown, setNextTeeCooldown] = useState(0)
   const [capturingNextTee, setCapturingNextTee] = useState(false)
+  const [editingScore, setEditingScore] = useState<HoleScore | null>(null)
 
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
   const clubChoices = useMemo(() => {
@@ -428,6 +430,20 @@ export function RoundActive() {
     setNextTeeCooldown(5)
   }
 
+  async function saveEditedScore(updated: HoleScore) {
+    await db.holeScores.put(updated)
+    setHoleSummary((prev) =>
+      prev ? { ...prev, allScores: prev.allScores.map((s) => (s.id === updated.id ? updated : s)) } : prev,
+    )
+    // The just-finished hole is also shown above the table from live
+    // component state, not from allScores — keep it in sync too.
+    if (updated.holeNumber === currentHole?.number) {
+      setStrokes(updated.strokes)
+      setPutts(updated.putts)
+    }
+    setEditingScore(null)
+  }
+
   async function confirmAtNextTee() {
     if (!holeSummary || nextTeeCooldown > 0 || !tee) return
     setCapturingNextTee(true)
@@ -510,7 +526,10 @@ export function RoundActive() {
             </div>
           </div>
 
-          <HoleScoreTable scores={holeSummary.allScores} />
+          <HoleScoreTable scores={holeSummary.allScores} onEditHole={setEditingScore} />
+          <p className="text-xs -mt-1" style={inkMuted}>
+            Tap a score to fix a mistake.
+          </p>
 
           <div className="flex justify-end">
             <BigButton onClick={confirmAtNextTee} disabled={nextTeeCooldown > 0 || capturingNextTee}>
@@ -828,6 +847,14 @@ export function RoundActive() {
             ))}
           </div>
         </Modal>
+      )}
+
+      {editingScore && (
+        <EditHoleScoreModal
+          score={editingScore}
+          onClose={() => setEditingScore(null)}
+          onSave={saveEditedScore}
+        />
       )}
     </div>
   )

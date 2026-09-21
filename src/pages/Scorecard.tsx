@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { db } from '../db/db'
 import type { Course, HoleScore, Round, Tee } from '../db/schema'
 import { HoleScoreTable } from '../components/HoleScoreTable'
+import { EditHoleScoreModal } from '../components/EditHoleScoreModal'
 
 export function Scorecard() {
   const { roundId } = useParams<{ roundId: string }>()
@@ -10,6 +11,7 @@ export function Scorecard() {
   const [course, setCourse] = useState<Course | null>(null)
   const [tee, setTee] = useState<Tee | null>(null)
   const [scores, setScores] = useState<HoleScore[]>([])
+  const [editingScore, setEditingScore] = useState<HoleScore | null>(null)
 
   useEffect(() => {
     if (!roundId) return
@@ -27,6 +29,12 @@ export function Scorecard() {
       setScores(s)
     })()
   }, [roundId])
+
+  async function saveScore(updated: HoleScore) {
+    await db.holeScores.put(updated)
+    setScores((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+    setEditingScore(null)
+  }
 
   if (!round)
     return (
@@ -46,7 +54,18 @@ export function Scorecard() {
         </p>
       </div>
 
-      <HoleScoreTable scores={scores} />
+      <HoleScoreTable scores={scores} onEditHole={setEditingScore} />
+      <p className="text-xs -mt-2" style={{ color: 'var(--ink-muted)' }}>
+        Tap a score to fix a mistake.
+      </p>
+
+      {editingScore && (
+        <EditHoleScoreModal
+          score={editingScore}
+          onClose={() => setEditingScore(null)}
+          onSave={saveScore}
+        />
+      )}
 
       {!round.completed && (
         <Link
