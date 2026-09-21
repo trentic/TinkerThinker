@@ -59,7 +59,7 @@ export function BigButton({ variant = 'primary', className = '', style, children
       style={{ ...variantStyle, ...style }}
       {...rest}
     >
-      {showGloss && <span className="gloss-highlight rounded-t-full" />}
+      {showGloss && <span className="gloss-highlight rounded-full" />}
       <span className="relative">{children}</span>
     </button>
   )

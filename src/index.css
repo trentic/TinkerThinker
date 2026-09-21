@@ -37,6 +37,7 @@ body,
 }
 
 body {
+  position: relative;
   background: linear-gradient(
     180deg,
     var(--aero-bg-top) 0%,
@@ -45,6 +46,81 @@ body {
     var(--aero-bg-bottom) 100%
   );
   background-attachment: fixed;
+}
+
+/* Ambient drift: two big, heavily-blurred blobs in the gradient's own
+   colors, slowly wandering behind the content. Each moves on its own
+   irregular, differently-timed path so the two never fall into sync — it
+   reads as the sky-to-turf gradient gently breathing, not as a new shape
+   moving across the screen. */
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  inset: -25%;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.6;
+}
+
+body::before {
+  background: radial-gradient(circle, var(--aero-bg-top) 0%, transparent 60%);
+  animation: aero-drift-a 48s ease-in-out infinite;
+}
+
+body::after {
+  background: radial-gradient(circle, var(--aero-bg-mid) 0%, transparent 60%);
+  animation: aero-drift-b 63s ease-in-out infinite;
+}
+
+@keyframes aero-drift-a {
+  0% {
+    transform: translate(-6%, -5%) scale(1);
+  }
+  27% {
+    transform: translate(5%, 4%) scale(1.1);
+  }
+  51% {
+    transform: translate(9%, -7%) scale(0.95);
+  }
+  78% {
+    transform: translate(-4%, 7%) scale(1.05);
+  }
+  100% {
+    transform: translate(-6%, -5%) scale(1);
+  }
+}
+
+@keyframes aero-drift-b {
+  0% {
+    transform: translate(6%, 6%) scale(1.05);
+  }
+  33% {
+    transform: translate(-8%, -3%) scale(0.92);
+  }
+  64% {
+    transform: translate(3%, -9%) scale(1.1);
+  }
+  100% {
+    transform: translate(6%, 6%) scale(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none;
+  }
+}
+
+/* Manual battery-saving override, set from Settings (see lib/settings.ts).
+   Removes the layers entirely rather than just pausing the animation, so
+   there's no blurred layer left for the browser to keep composited. */
+html.bg-animation-off body::before,
+html.bg-animation-off body::after {
+  display: none;
 }
 
 /* On-course UI needs big, glove/sun friendly hit targets */
@@ -70,16 +146,21 @@ button {
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
-/* Glossy highlight streak overlaid on the top of a pill button. */
+/* Glossy highlight overlaid on a pill button. A radial (not linear) falloff
+   is deliberate: a top-to-bottom linear fade is already nearly transparent
+   by the time it reaches a pill's rounded end-caps (their widest point sits
+   at ~50% height), so the shine visibly stops short of the curve. Radiating
+   from above the button instead keeps brightness a function of distance
+   from that point, so it wraps the curve all the way to the true edge. */
 .gloss-highlight {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.75) 0%,
-    rgba(255, 255, 255, 0.15) 48%,
-    rgba(255, 255, 255, 0) 55%
+  background: radial-gradient(
+    120% 100% at 50% -25%,
+    rgba(255, 255, 255, 0.85) 0%,
+    rgba(255, 255, 255, 0.35) 55%,
+    rgba(255, 255, 255, 0) 85%
   );
 }
 

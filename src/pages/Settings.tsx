@@ -9,6 +9,8 @@ import {
   setMulliganEnabled,
   isDebugLocationEnabled,
   setDebugLocationEnabled,
+  isBgAnimationEnabled,
+  setBgAnimationEnabled,
 } from '../lib/settings'
 import {
   isDriveConfigured,
@@ -33,6 +35,7 @@ export function Settings() {
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
   const [mulliganEnabled, setMulliganEnabledState] = useState(isMulliganEnabled())
   const [debugLocationEnabled, setDebugLocationEnabledState] = useState(isDebugLocationEnabled())
+  const [bgAnimationEnabled, setBgAnimationEnabledState] = useState(isBgAnimationEnabled())
   const [driveConnected, setDriveConnected] = useState(isDriveConnected())
   const [driveBusy, setDriveBusy] = useState(false)
   const [driveStatus, setDriveStatus] = useState<string | null>(null)
@@ -75,6 +78,12 @@ export function Settings() {
     const next = !debugLocationEnabled
     setDebugLocationEnabled(next)
     setDebugLocationEnabledState(next)
+  }
+
+  function toggleBgAnimation() {
+    const next = !bgAnimationEnabled
+    setBgAnimationEnabled(next)
+    setBgAnimationEnabledState(next)
   }
 
   async function handleConnectDrive() {
@@ -186,6 +195,24 @@ export function Settings() {
           style={mulliganEnabled ? TOGGLE_ON_STYLE : TOGGLE_OFF_STYLE}
         >
           {mulliganEnabled ? 'On' : 'Off'}
+        </button>
+      </div>
+
+      <div className="glass rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+            Animated background
+          </div>
+          <p className="text-sm mt-1" style={{ color: 'var(--ink-secondary)' }}>
+            The slow-drifting background. Turn it off to save battery.
+          </p>
+        </div>
+        <button
+          onClick={toggleBgAnimation}
+          className={`min-h-10 px-4 rounded-full text-sm font-semibold shrink-0 ${bgAnimationEnabled ? TOGGLE_ON : ''}`}
+          style={bgAnimationEnabled ? TOGGLE_ON_STYLE : TOGGLE_OFF_STYLE}
+        >
+          {bgAnimationEnabled ? 'On' : 'Off'}
         </button>
       </div>
 

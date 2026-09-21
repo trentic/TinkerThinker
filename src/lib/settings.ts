@@ -25,3 +25,23 @@ export function isDebugLocationEnabled(): boolean {
 export function setDebugLocationEnabled(enabled: boolean): void {
   localStorage.setItem(DEBUG_LOCATION_KEY, String(enabled))
 }
+
+const BG_ANIMATION_KEY = 'fairway:bgAnimationEnabled'
+
+// The slow-drifting background blobs (see index.css) are a nice-to-have —
+// disabling them stops a continuously-animated blurred layer from
+// recompositing every frame, which is the main lever a phone has here for
+// battery life.
+export function isBgAnimationEnabled(): boolean {
+  const raw = localStorage.getItem(BG_ANIMATION_KEY)
+  return raw === null ? true : raw === 'true'
+}
+
+export function applyBgAnimationClass(enabled: boolean): void {
+  document.documentElement.classList.toggle('bg-animation-off', !enabled)
+}
+
+export function setBgAnimationEnabled(enabled: boolean): void {
+  localStorage.setItem(BG_ANIMATION_KEY, String(enabled))
+  applyBgAnimationClass(enabled)
+}
