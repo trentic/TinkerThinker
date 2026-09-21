@@ -6,11 +6,14 @@
 // app, not a cost issue. Uses the narrow `drive.file` scope, so the app can
 // only see files it creates itself — never the rest of anyone's Drive.
 //
-// Honest limitation: without a backend there's no refresh token, so silent
-// re-auth depends on the browser allowing Google's background sign-in
-// check. That's unreliable in Safari/iOS (third-party storage
-// restrictions), so on iPhone this will often need an interactive
-// "Connect" tap once per session rather than truly invisible sync.
+// Honest limitation: without a backend there's no refresh token, and GIS's
+// token client always briefly pops a window when asked for one — even for
+// a "silent" request — so this caches the access token across page loads
+// (see cachedToken below) to keep that from happening on every reload. A
+// fresh token is only fetched once it actually expires (~hourly) or after
+// the cache is cleared, and on Safari/iOS that fetch can fail silently due
+// to third-party storage restrictions, needing an interactive "Connect"
+// tap instead of truly invisible sync.
 
 import { buildBackupPayload, mergeBackupPayload, type BackupFile } from '../db/backup'
 
@@ -47,11 +50,39 @@ const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const DRIVE_FILE_NAME = 'fairway-backup.json'
 const FILE_ID_KEY = 'fairway:driveFileId'
 const CONNECTED_KEY = 'fairway:driveConnected'
+const TOKEN_CACHE_KEY = 'fairway:driveTokenCache'
 const SILENT_AUTH_TIMEOUT_MS = 4000
+
+interface CachedToken {
+  value: string
+  expiresAt: number
+}
 
 let gisLoadPromise: Promise<void> | null = null
 let tokenClient: TokenClient | null = null
-let cachedToken: { value: string; expiresAt: number } | null = null
+// GIS's token client always pops a (brief, visible) window when asked for a
+// token — there's no truly invisible iframe renewal without a backend — so
+// reusing an unexpired token across page loads is what keeps that from
+// happening on every refresh. Persisted to localStorage rather than just
+// held in memory, since a plain JS variable is wiped on every reload.
+let cachedToken: CachedToken | null = loadCachedToken()
+
+function loadCachedToken(): CachedToken | null {
+  try {
+    const raw = localStorage.getItem(TOKEN_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as CachedToken
+    return parsed.expiresAt > Date.now() ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function saveCachedToken(token: CachedToken | null): void {
+  cachedToken = token
+  if (token) localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify(token))
+  else localStorage.removeItem(TOKEN_CACHE_KEY)
+}
 
 export function isDriveConfigured(): boolean {
   return !!CLIENT_ID
@@ -107,10 +138,10 @@ function requestToken(interactive: boolean): Promise<string> {
             reject(new Error(resp.error ?? 'Google sign-in did not return an access token.'))
             return
           }
-          cachedToken = {
+          saveCachedToken({
             value: resp.access_token,
             expiresAt: Date.now() + (resp.expires_in ?? 3600) * 1000 - 60_000,
-          }
+          })
           resolve(resp.access_token)
         }
         client.requestAccessToken({ prompt: interactive ? 'consent' : '' })
@@ -130,7 +161,7 @@ export async function connectDrive(): Promise<void> {
 
 export function disconnectDrive(): void {
   const token = cachedToken?.value
-  cachedToken = null
+  saveCachedToken(null)
   localStorage.removeItem(CONNECTED_KEY)
   localStorage.removeItem(FILE_ID_KEY)
   if (token) window.google?.accounts.oauth2.revoke(token, () => {})
