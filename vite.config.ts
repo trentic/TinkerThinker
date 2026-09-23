@@ -36,6 +36,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Registered explicitly in main.tsx instead (so it can actually
+      // reload the page on update — see there for why the default
+      // injected register script isn't enough for that).
+      injectRegister: false,
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Fairway — Golf GPS & Scorecard',
