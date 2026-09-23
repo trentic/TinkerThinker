@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { BigButton } from '../components/BigButton'
+import { OnboardingTutorial } from '../components/OnboardingTutorial'
 import { exportBackup, importBackup, getLastBackupAt } from '../db/backup'
 import { db } from '../db/db'
 import { COMMON_CLUBS } from '../lib/clubs'
@@ -11,6 +12,7 @@ import {
   setDebugLocationEnabled,
   isBgAnimationEnabled,
   setBgAnimationEnabled,
+  setOnboardingSeen,
 } from '../lib/settings'
 import {
   isDriveConfigured,
@@ -39,6 +41,7 @@ export function Settings() {
   const [driveConnected, setDriveConnected] = useState(isDriveConnected())
   const [driveBusy, setDriveBusy] = useState(false)
   const [driveStatus, setDriveStatus] = useState<string | null>(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   async function handleExport() {
     await exportBackup()
@@ -139,6 +142,20 @@ export function Settings() {
       <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>
         Settings
       </h1>
+
+      <div className="glass rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+            How scoring works
+          </div>
+          <p className="text-sm mt-1" style={{ color: 'var(--ink-secondary)' }}>
+            A quick refresher on par, strokes, and reading your score.
+          </p>
+        </div>
+        <BigButton variant="secondary" onClick={() => setShowOnboarding(true)} className="shrink-0">
+          Show me
+        </BigButton>
+      </div>
 
       <div className="glass rounded-2xl p-4 flex flex-col gap-3">
         <div>
@@ -327,6 +344,15 @@ export function Settings() {
           {debugLocationEnabled ? 'On' : 'Off'}
         </button>
       </div>
+
+      {showOnboarding && (
+        <OnboardingTutorial
+          onDone={() => {
+            setOnboardingSeen(true)
+            setShowOnboarding(false)
+          }}
+        />
+      )}
     </div>
   )
 }

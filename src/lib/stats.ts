@@ -1,5 +1,5 @@
 import { db } from '../db/db'
-import type { HoleScore } from '../db/schema'
+import type { HoleScore, TeeShotLie } from '../db/schema'
 
 export interface RoundSummary {
   roundId: string
@@ -16,6 +16,7 @@ export interface StatsSummary {
   avgToPar: number | null
   bestRound: RoundSummary | null
   fairwaysHitPct: number | null
+  lieBreakdown: Record<TeeShotLie, number>
   girPct: number | null
   puttsPer9: number | null
   scramblingPct: number | null
@@ -30,7 +31,7 @@ export async function computeStats(): Promise<StatsSummary> {
 
   const summaries: RoundSummary[] = []
   let fairwayEligible = 0
-  let fairwayHit = 0
+  const lieBreakdown: Record<TeeShotLie, number> = { fairway: 0, rough: 0, sand: 0 }
   let girEligible = 0
   let girHit = 0
   let missedGirCount = 0
@@ -60,9 +61,9 @@ export async function computeStats(): Promise<StatsSummary> {
     let roundPutts = 0
     let roundPenalties = 0
     for (const h of holeScores) {
-      if (h.fairwayHit !== null) {
+      if (h.teeShotLie !== null) {
         fairwayEligible++
-        if (h.fairwayHit) fairwayHit++
+        lieBreakdown[h.teeShotLie]++
       }
       if (h.greenInRegulation !== null) {
         girEligible++
@@ -98,7 +99,8 @@ export async function computeStats(): Promise<StatsSummary> {
     roundsPlayed: summaries.length,
     avgToPar,
     bestRound,
-    fairwaysHitPct: fairwayEligible > 0 ? (fairwayHit / fairwayEligible) * 100 : null,
+    fairwaysHitPct: fairwayEligible > 0 ? (lieBreakdown.fairway / fairwayEligible) * 100 : null,
+    lieBreakdown,
     girPct: girEligible > 0 ? (girHit / girEligible) * 100 : null,
     puttsPer9: avg(puttRatesPer9),
     scramblingPct: missedGirCount > 0 ? (scrambledCount / missedGirCount) * 100 : null,

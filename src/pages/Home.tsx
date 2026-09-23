@@ -4,10 +4,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import { db, newId } from '../db/db'
 import { BigButton } from '../components/BigButton'
 import { Modal } from '../components/Modal'
+import { OnboardingTutorial } from '../components/OnboardingTutorial'
 import { daysSinceLastBackup } from '../db/backup'
 import { checkCourseDeletable, deleteCourseCascade } from '../db/courseActions'
 import { computeCourseSummary, type CourseSummary } from '../lib/courseStats'
-import { isDebugLocationEnabled } from '../lib/settings'
+import { hasSeenOnboarding, isDebugLocationEnabled, setOnboardingSeen } from '../lib/settings'
 import { toParLabel } from '../lib/format'
 
 type HoleSelection = 'all18' | 'front9' | 'back9'
@@ -23,6 +24,7 @@ export function Home() {
   const [deleteBlockedReason, setDeleteBlockedReason] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [summaries, setSummaries] = useState<Record<string, CourseSummary>>({})
+  const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
   const tees = useLiveQuery(
     () => (pickingCourseId ? db.tees.where('courseId').equals(pickingCourseId).sortBy('order') : []),
     [pickingCourseId],
@@ -307,6 +309,15 @@ export function Home() {
           </p>
           <BigButton onClick={() => setDeleteBlockedReason(null)}>Got it</BigButton>
         </Modal>
+      )}
+
+      {showOnboarding && (
+        <OnboardingTutorial
+          onDone={() => {
+            setOnboardingSeen(true)
+            setShowOnboarding(false)
+          }}
+        />
       )}
     </div>
   )

@@ -7,7 +7,7 @@ import { HoleScoreTable } from '../components/HoleScoreTable'
 import { EditHoleScoreModal } from '../components/EditHoleScoreModal'
 import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
-import type { Course, Hole, HoleScore, PenaltyType, Round, Tee } from '../db/schema'
+import type { Course, Hole, HoleScore, PenaltyType, Round, Tee, TeeShotLie } from '../db/schema'
 import { destinationPoint, distanceYards, getCurrentPosition, type LatLng } from '../lib/geo'
 import {
   calculatePlaysLike,
@@ -22,13 +22,8 @@ import { isDebugLocationEnabled, isMulliganEnabled } from '../lib/settings'
 import { getMockPosition, setMockPosition } from '../lib/debugLocation'
 import { toParLabel } from '../lib/format'
 import { isDriveConnected, pushBackupToDrive } from '../lib/googleDrive'
-
-const PENALTY_LABELS: Record<PenaltyType, string> = {
-  water: 'Water hazard',
-  oob: 'Out of bounds',
-  lost: 'Lost ball',
-  unplayable: 'Unplayable lie',
-}
+import { PENALTY_LABELS } from '../lib/penalties'
+import { TEE_SHOT_LIE_LABELS } from '../lib/lies'
 
 const ink = { color: 'var(--ink)' }
 const inkSecondary = { color: 'var(--ink-secondary)' }
@@ -62,18 +57,20 @@ export function RoundActive() {
   const [currentHoleNumber, setCurrentHoleNumber] = useState<number | null>(null)
 
   const [myPos, setMyPos] = useState<LatLng | null>(null)
+  const [myPosAccuracyM, setMyPosAccuracyM] = useState<number | null>(null)
   const [locating, setLocating] = useState(false)
   const [target, setTarget] = useState<LatLng | null>(null)
   const [playsLike, setPlaysLike] = useState<PlaysLikeResult | null>(null)
   const [wind, setWind] = useState<WindInfo | null>(null)
   const [yardageLoading, setYardageLoading] = useState(false)
+  const [yardageError, setYardageError] = useState<string | null>(null)
 
   const [strokes, setStrokes] = useState(0)
   const [putts, setPutts] = useState(0)
   const [penalties, setPenalties] = useState<PenaltyType[]>([])
   const [lastMarkedPos, setLastMarkedPos] = useState<LatLng | null>(null)
-  const [fairwayHit, setFairwayHit] = useState<boolean | null>(null)
-  const [askFairway, setAskFairway] = useState(false)
+  const [teeShotLie, setTeeShotLie] = useState<TeeShotLie | null>(null)
+  const [askLie, setAskLie] = useState(false)
   const [puttMode, setPuttMode] = useState(false)
   const [strokesBeforePutting, setStrokesBeforePutting] = useState<number | null>(null)
   // Tracks whether entering putt mode just captured this hole's first-ever
@@ -149,8 +146,8 @@ export function RoundActive() {
     setPutts(0)
     setPenalties([])
     setLastMarkedPos(null)
-    setFairwayHit(null)
-    setAskFairway(false)
+    setTeeShotLie(null)
+    setAskLie(false)
     setPuttMode(false)
     setStrokesBeforePutting(null)
     setJustCapturedGreen(false)
@@ -189,6 +186,7 @@ export function RoundActive() {
       const pos = await getCurrentPosition()
       const ll = { lat: pos.coords.latitude, lng: pos.coords.longitude }
       setMyPos(ll)
+      setMyPosAccuracyM(pos.coords.accuracy)
       return ll
     } catch {
       return myPos
@@ -201,6 +199,15 @@ export function RoundActive() {
     const updatedCoords = { ...hole.teeCoords, [teeId]: pos }
     await db.holes.update(hole.id, { teeCoords: updatedCoords })
     setHolesList((prev) => prev.map((h) => (h.id === hole.id ? { ...h, teeCoords: updatedCoords } : h)))
+  }
+
+  // Today's actual pin, distinct from the hole's permanent green-center
+  // reference — the cup moves day to day, this doesn't.
+  async function setTodaysPin(holeNumber: number, pos: LatLng) {
+    if (!round) return
+    const updated = { ...round.pinPositions, [holeNumber]: pos }
+    await db.rounds.update(round.id, { pinPositions: updated })
+    setRound((prev) => (prev ? { ...prev, pinPositions: updated } : prev))
   }
 
   // Explicit, deliberate tee capture — only offered before the first stroke.
@@ -228,24 +235,39 @@ export function RoundActive() {
     if (!round || !tee) return
     setTarget(pos)
     setYardageLoading(true)
+    setYardageError(null)
     try {
       const origin = (await refreshMyPosition()) ?? myPos
       if (!origin) return
 
-      const [elevations, wind] = await Promise.all([
-        getElevationMeters([origin, pos]),
-        getCurrentWind(origin),
-      ])
-      setWind(wind)
-      setPlaysLike(
-        calculatePlaysLike({
-          from: origin,
-          to: pos,
-          fromElevationM: elevations[0],
-          toElevationM: elevations[1],
-          wind,
-        }),
-      )
+      try {
+        const [elevations, wind] = await Promise.all([
+          getElevationMeters([origin, pos]),
+          getCurrentWind(origin),
+        ])
+        setWind(wind)
+        setPlaysLike(
+          calculatePlaysLike({
+            from: origin,
+            to: pos,
+            fromElevationM: elevations[0],
+            toElevationM: elevations[1],
+            wind,
+          }),
+        )
+      } catch {
+        // Elevation/wind lookup needs a network connection this device
+        // might not have on course — straight-line distance doesn't, so
+        // that still works rather than showing nothing at all.
+        setWind(null)
+        setPlaysLike({
+          actualYards: Math.round(distanceYards(origin, pos)),
+          elevationAdjustYards: 0,
+          windAdjustYards: 0,
+          playsLikeYards: Math.round(distanceYards(origin, pos)),
+        })
+        setYardageError("Couldn't fetch wind/elevation (offline?) — showing straight-line distance only.")
+      }
     } finally {
       setYardageLoading(false)
     }
@@ -288,7 +310,7 @@ export function RoundActive() {
     setArmedClub(null)
 
     if (nextStroke === 1 && currentHole.par >= 4) {
-      setAskFairway(true)
+      setAskLie(true)
     }
   }
 
@@ -396,8 +418,8 @@ export function RoundActive() {
     setLastMarkedPos(last.prevLastMarkedPos)
     void db.shots.delete(last.shotId)
     if (last.wasFirstShot) {
-      setFairwayHit(null)
-      setAskFairway(false)
+      setTeeShotLie(null)
+      setAskLie(false)
     }
   }
 
@@ -413,7 +435,7 @@ export function RoundActive() {
       strokes,
       putts,
       penalties,
-      fairwayHit: currentHole.par >= 4 ? fairwayHit : null,
+      teeShotLie: currentHole.par >= 4 ? teeShotLie : null,
       greenInRegulation: gir,
     }
     await db.holeScores.add(holeScore)
@@ -505,6 +527,9 @@ export function RoundActive() {
   }
   if (myPos) pins.push({ id: 'me', position: myPos, label: '●', color: '#2563eb' })
   if (target) pins.push({ id: 'target', position: target, label: '🎯', color: '#dc2626' })
+  const todaysPin = round?.pinPositions?.[currentHole.number] ?? null
+  if (todaysPin) pins.push({ id: 'pin', position: todaysPin, label: '📍', color: '#e8431f' })
+  const pinDistance = todaysPin && myPos ? Math.round(distanceYards(myPos, todaysPin)) : null
   const outlines: MapOutline[] = currentHole.outline
     ? [{ id: 'hole-outline', coordinates: currentHole.outline, color: '#f59e0b' }]
     : []
@@ -688,8 +713,29 @@ export function RoundActive() {
                   )}
                   <div className="text-xs" style={inkMuted}>
                     Estimate — not laser-precision.
+                    {myPosAccuracyM !== null && !debugLocationEnabled && (
+                      <> GPS accurate to ±{Math.round(myPosAccuracyM)}m right now.</>
+                    )}
                   </div>
                 </div>
+              )}
+              {yardageError && !yardageLoading && (
+                <p className="text-xs" style={amberText}>
+                  {yardageError}
+                </p>
+              )}
+              {target && !yardageLoading && (
+                <BigButton
+                  variant="secondary"
+                  onClick={() => void setTodaysPin(currentHole.number, target)}
+                >
+                  📍 Set as today's pin
+                </BigButton>
+              )}
+              {pinDistance !== null && (
+                <p className="text-xs -mt-1 text-center" style={inkMuted}>
+                  Today's pin is set — {pinDistance} yd from here.
+                </p>
               )}
             </div>
           ) : (
@@ -732,6 +778,14 @@ export function RoundActive() {
                           <BigButton variant="secondary" onClick={handleSetTee}>
                             📍 Set tee (I'm standing on it)
                           </BigButton>
+                        )}
+
+                        {pinDistance !== null && (
+                          <div className="glass-solid rounded-xl px-3 py-2 text-center">
+                            <span className="text-lg font-bold" style={ink}>
+                              {pinDistance} yd to pin
+                            </span>
+                          </div>
                         )}
 
                         <BigButton variant="secondary" onClick={() => setShowMap(true)}>
@@ -818,26 +872,21 @@ export function RoundActive() {
         </>
       )}
 
-      {askFairway && (
-        <Modal onClose={() => setAskFairway(false)} title="Did your tee shot find the fairway?">
-          <div className="grid grid-cols-2 gap-3">
-            <BigButton
-              onClick={() => {
-                setFairwayHit(true)
-                setAskFairway(false)
-              }}
-            >
-              Yes
-            </BigButton>
-            <BigButton
-              variant="secondary"
-              onClick={() => {
-                setFairwayHit(false)
-                setAskFairway(false)
-              }}
-            >
-              No
-            </BigButton>
+      {askLie && (
+        <Modal onClose={() => setAskLie(false)} title="Where did your tee shot end up?">
+          <div className="flex flex-col gap-3">
+            {(['fairway', 'rough', 'sand'] as const).map((lie) => (
+              <BigButton
+                key={lie}
+                variant={lie === 'fairway' ? 'primary' : 'secondary'}
+                onClick={() => {
+                  setTeeShotLie(lie)
+                  setAskLie(false)
+                }}
+              >
+                {TEE_SHOT_LIE_LABELS[lie]}
+              </BigButton>
+            ))}
           </div>
         </Modal>
       )}

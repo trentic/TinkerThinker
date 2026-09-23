@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { HoleScore } from '../db/schema'
 import { Modal } from './Modal'
 import { BigButton } from './BigButton'
+import { TEE_SHOT_LIE_LABELS } from '../lib/lies'
 
 interface EditHoleScoreModalProps {
   score: HoleScore
@@ -93,12 +94,12 @@ function TriToggle({
 }
 
 /** Lets a user correct a hole's recorded score after the fact — strokes,
- * putts, fairway hit, and greens in regulation — for whichever hole they
+ * putts, tee shot lie, and greens in regulation — for whichever hole they
  * tap on the scorecard. */
 export function EditHoleScoreModal({ score, onClose, onSave }: EditHoleScoreModalProps) {
   const [strokes, setStrokes] = useState(score.strokes)
   const [putts, setPutts] = useState(score.putts)
-  const [fairwayHit, setFairwayHit] = useState(score.fairwayHit)
+  const [teeShotLie, setTeeShotLie] = useState(score.teeShotLie)
   const [greenInRegulation, setGreenInRegulation] = useState(score.greenInRegulation)
 
   function changePutts(next: number) {
@@ -107,7 +108,7 @@ export function EditHoleScoreModal({ score, onClose, onSave }: EditHoleScoreModa
   }
 
   function save() {
-    onSave({ ...score, strokes, putts, fairwayHit, greenInRegulation })
+    onSave({ ...score, strokes, putts, teeShotLie, greenInRegulation })
   }
 
   return (
@@ -115,7 +116,25 @@ export function EditHoleScoreModal({ score, onClose, onSave }: EditHoleScoreModa
       <div className="flex flex-col gap-4">
         <Stepper label="Strokes" value={strokes} min={putts} onChange={setStrokes} />
         <Stepper label="Putts" value={putts} min={0} onChange={changePutts} />
-        {score.par >= 4 && <TriToggle label="Fairway hit" value={fairwayHit} onChange={setFairwayHit} />}
+        {score.par >= 4 && (
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium" style={ink}>
+              Tee shot
+            </span>
+            <div className="flex gap-2">
+              {(['fairway', 'rough', 'sand'] as const).map((lie) => (
+                <button
+                  key={lie}
+                  onClick={() => setTeeShotLie(teeShotLie === lie ? null : lie)}
+                  className="flex-1 min-h-9 px-2 rounded-full text-sm font-semibold"
+                  style={teeShotLie === lie ? pillOn : pillOff}
+                >
+                  {TEE_SHOT_LIE_LABELS[lie]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <TriToggle label="Green in regulation" value={greenInRegulation} onChange={setGreenInRegulation} />
         <p className="text-xs -mt-1" style={inkMuted}>
           This only changes what's on the scorecard — it won't move or remove any GPS-tracked

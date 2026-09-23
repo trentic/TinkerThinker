@@ -50,6 +50,8 @@ export interface Hole {
 
 export type PenaltyType = 'water' | 'oob' | 'lost' | 'unplayable'
 
+export type TeeShotLie = 'fairway' | 'rough' | 'sand'
+
 export interface Round {
   id: string
   courseId: string
@@ -61,6 +63,11 @@ export interface Round {
   // own holeCount is how many holes physically exist there; this is what
   // you're actually playing today.
   holeNumbers: number[]
+  // Today's pin position per hole, captured by tapping the flag on the map
+  // — distinct from Hole.greenLat/Lng (the course's permanent green-center
+  // reference), since the actual cup moves day to day. Optional/progressive,
+  // same pattern as Hole.teeCoords.
+  pinPositions?: Record<number, { lat: number; lng: number }>
 }
 
 export interface HoleScore {
@@ -71,7 +78,7 @@ export interface HoleScore {
   strokes: number
   putts: number
   penalties: PenaltyType[]
-  fairwayHit: boolean | null // null = not applicable (par 3, or no fairway shot yet)
+  teeShotLie: TeeShotLie | null // null = not applicable (par 3, or no tee shot recorded yet)
   greenInRegulation: boolean | null
 }
 

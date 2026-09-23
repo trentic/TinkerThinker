@@ -45,3 +45,13 @@ export function setBgAnimationEnabled(enabled: boolean): void {
   localStorage.setItem(BG_ANIMATION_KEY, String(enabled))
   applyBgAnimationClass(enabled)
 }
+
+const ONBOARDING_SEEN_KEY = 'fairway:onboardingSeen'
+
+export function hasSeenOnboarding(): boolean {
+  return localStorage.getItem(ONBOARDING_SEEN_KEY) === 'true'
+}
+
+export function setOnboardingSeen(seen: boolean): void {
+  localStorage.setItem(ONBOARDING_SEEN_KEY, String(seen))
+}

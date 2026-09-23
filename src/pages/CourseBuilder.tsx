@@ -52,6 +52,8 @@ interface DraftTee {
   id: string
   name: string
   color: string
+  courseRating?: number
+  slopeRating?: number
 }
 
 export function CourseBuilder() {
@@ -67,6 +69,8 @@ export function CourseBuilder() {
   const [searching, setSearching] = useState(false)
   const [findingNearby, setFindingNearby] = useState(false)
   const [nearbyNotice, setNearbyNotice] = useState<string | null>(null)
+  const [locateError, setLocateError] = useState<string | null>(null)
+  const [findingManualCenter, setFindingManualCenter] = useState(false)
   const [center, setCenter] = useState<LatLng | null>(null)
   const [osmFeatures, setOsmFeatures] = useState<OsmGolfFeature[]>([])
   const [holes, setHoles] = useState<DraftHole[]>([])
@@ -99,7 +103,15 @@ export function CourseBuilder() {
       setHoleCount(c.holeCount)
       setCenter({ lat: c.centerLat, lng: c.centerLng })
       setOriginalTeeIds(teeRecords.map((t) => t.id))
-      setTees(teeRecords.map((t) => ({ id: t.id, name: t.name, color: t.color })))
+      setTees(
+        teeRecords.map((t) => ({
+          id: t.id,
+          name: t.name,
+          color: t.color,
+          courseRating: t.courseRating,
+          slopeRating: t.slopeRating,
+        })),
+      )
       setHoles(
         holeRecords.map((h) => ({
           id: h.id,
@@ -119,8 +131,13 @@ export function CourseBuilder() {
   async function handleSearch() {
     if (!query.trim()) return
     setSearching(true)
+    setLocateError(null)
     try {
-      setSearchResults(await searchCourseLocation(query))
+      const results = await searchCourseLocation(query)
+      setSearchResults(results)
+      if (results.length === 0) setLocateError("No matches found. Check the spelling, or map it manually below.")
+    } catch {
+      setLocateError("Couldn't reach the course search service — check your connection, or map it manually below.")
     } finally {
       setSearching(false)
     }
@@ -160,27 +177,56 @@ export function CourseBuilder() {
   async function useCurrentLocation() {
     setFindingNearby(true)
     setNearbyNotice(null)
+    setLocateError(null)
     try {
       const pos = await getCurrentPosition()
       const here = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-      const nearby = await fetchNearbyGolfCourses(here)
-      if (nearby.length > 0) {
-        setSearchResults(
-          nearby.map((c) => ({
-            // Comma-separated so the "pick a result" handler's
-            // displayName.split(',')[0] pulls out just the course name,
-            // matching how Nominatim's results are formatted.
-            displayName: `${c.name}, ${(c.distanceMeters / 1000).toFixed(1)} km away`,
-            lat: c.point.lat,
-            lng: c.point.lng,
-          })),
-        )
-      } else {
-        setNearbyNotice("No named courses found nearby on OpenStreetMap — using your exact location instead.")
+      try {
+        const nearby = await fetchNearbyGolfCourses(here)
+        if (nearby.length > 0) {
+          setSearchResults(
+            nearby.map((c) => ({
+              // Comma-separated so the "pick a result" handler's
+              // displayName.split(',')[0] pulls out just the course name,
+              // matching how Nominatim's results are formatted.
+              displayName: `${c.name}, ${(c.distanceMeters / 1000).toFixed(1)} km away`,
+              lat: c.point.lat,
+              lng: c.point.lng,
+            })),
+          )
+        } else {
+          setNearbyNotice("No named courses found nearby on OpenStreetMap — using your exact location instead.")
+          await selectLocation(here)
+        }
+      } catch {
+        // Course lookup failed (offline/API down) but we do have a real
+        // GPS fix — that's enough to map the course manually without it.
+        setNearbyNotice("Couldn't search nearby courses (offline?) — using your exact location instead.")
         await selectLocation(here)
       }
+    } catch {
+      setLocateError("Couldn't get your location — check location permissions, or map it manually below.")
     } finally {
       setFindingNearby(false)
+    }
+  }
+
+  // No network needed at all: just the device's own GPS fix as the map
+  // center, for whenever search and "use current location"'s course
+  // lookup are both unavailable (offline, API down, no signal).
+  async function setUpManually() {
+    setFindingManualCenter(true)
+    setLocateError(null)
+    try {
+      const pos = await getCurrentPosition()
+      setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      setOsmFeatures([])
+      setHoles([])
+      setStep('map')
+    } catch {
+      setLocateError('Could not get your location — check that location permissions are allowed for this site.')
+    } finally {
+      setFindingManualCenter(false)
     }
   }
 
@@ -220,6 +266,10 @@ export function CourseBuilder() {
   function addTee(name: string, color: string) {
     if (tees.some((t) => t.name === name)) return
     setTees((prev) => [...prev, { id: newId(), name, color }])
+  }
+
+  function updateTee(id: string, patch: Partial<DraftTee>) {
+    setTees((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)))
   }
 
   function removeTee(id: string) {
@@ -263,7 +313,15 @@ export function CourseBuilder() {
       const removedTeeIds = originalTeeIds.filter((id) => !keptTeeIds.has(id))
       if (removedTeeIds.length > 0) await db.tees.bulkDelete(removedTeeIds)
       await db.tees.bulkPut(
-        tees.map((t, i) => ({ id: t.id, courseId, name: t.name, color: t.color, order: i })),
+        tees.map((t, i) => ({
+          id: t.id,
+          courseId,
+          name: t.name,
+          color: t.color,
+          order: i,
+          courseRating: t.courseRating,
+          slopeRating: t.slopeRating,
+        })),
       )
 
       // Partial updates only — this deliberately leaves centerLat/Lng,
@@ -295,6 +353,8 @@ export function CourseBuilder() {
       name: t.name,
       color: t.color,
       order: i,
+      courseRating: t.courseRating,
+      slopeRating: t.slopeRating,
     }))
     await db.tees.bulkAdd(teeRecords)
 
@@ -380,6 +440,16 @@ export function CourseBuilder() {
             <p className="text-xs" style={amberText}>
               {nearbyNotice}
             </p>
+          )}
+          {locateError && (
+            <div className="glass-solid rounded-xl p-3 flex flex-col gap-2">
+              <p className="text-xs" style={amberText}>
+                {locateError}
+              </p>
+              <BigButton variant="ghost" onClick={setUpManually} disabled={findingManualCenter}>
+                {findingManualCenter ? 'Getting your location…' : "I'll map it myself"}
+              </BigButton>
+            </div>
           )}
 
           <div className="flex gap-2">
@@ -486,17 +556,52 @@ export function CourseBuilder() {
           </p>
           <div className="flex flex-col gap-2">
             {tees.map((t) => (
-              <div key={t.id} className="flex items-center gap-3 glass rounded-xl p-3">
-                <span className="w-4 h-4 rounded-full" style={{ backgroundColor: t.color }} />
-                <span className="flex-1" style={ink}>
-                  {t.name}
-                </span>
-                <button onClick={() => removeTee(t.id)} className="text-sm" style={inkMuted}>
-                  Remove
-                </button>
+              <div key={t.id} className="flex flex-col gap-2 glass rounded-xl p-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-4 h-4 rounded-full" style={{ backgroundColor: t.color }} />
+                  <span className="flex-1" style={ink}>
+                    {t.name}
+                  </span>
+                  <button onClick={() => removeTee(t.id)} className="text-sm" style={inkMuted}>
+                    Remove
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 pl-7">
+                  <label className="flex items-center gap-1 text-xs" style={inkMuted}>
+                    Course rating
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="72.0"
+                      className="w-16 glass-solid rounded px-1 py-1 text-center"
+                      style={ink}
+                      value={t.courseRating ?? ''}
+                      onChange={(e) =>
+                        updateTee(t.id, { courseRating: e.target.value ? Number(e.target.value) : undefined })
+                      }
+                    />
+                  </label>
+                  <label className="flex items-center gap-1 text-xs" style={inkMuted}>
+                    Slope
+                    <input
+                      type="number"
+                      placeholder="113"
+                      className="w-16 glass-solid rounded px-1 py-1 text-center"
+                      style={ink}
+                      value={t.slopeRating ?? ''}
+                      onChange={(e) =>
+                        updateTee(t.id, { slopeRating: e.target.value ? Number(e.target.value) : undefined })
+                      }
+                    />
+                  </label>
+                </div>
               </div>
             ))}
           </div>
+          <p className="text-xs" style={inkMuted}>
+            Course/slope rating are optional — found on the scorecard. Set them to see an
+            estimated Handicap Index in Stats.
+          </p>
           <div className="flex flex-wrap gap-2">
             {TEE_PRESETS.filter((p) => !tees.some((t) => t.name === p.name)).map((p) => (
               <button
