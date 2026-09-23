@@ -18,7 +18,11 @@ import {
   type LatLng,
 } from '../lib/geo'
 import { tryAutoMapHoles } from '../lib/courseAutoMap'
-import { findParThreeCompanion, type ParThreeCompanion } from '../lib/parThreeDetection'
+import {
+  findParThreeCompanion,
+  type ParThreeCompanion,
+  type ParThreeCompanionCheck,
+} from '../lib/parThreeDetection'
 import { runScorecardOcr, type OcrDraftRow } from '../lib/scorecardOcr'
 
 type Step = 'locate' | 'checking' | 'confirm' | 'map' | 'tees' | 'review'
@@ -71,10 +75,10 @@ export function CourseBuilder() {
   const [holeCount, setHoleCount] = useState<9 | 18>(18)
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([])
-  // Par-3/executive companion found near a search result, keyed by that
+  // Par-3/executive companion check for a search result, keyed by that
   // result's index — populated asynchronously after results come in, since
   // it takes its own Overpass round-trip per result (see checkParThreeCompanions).
-  const [parThreeCompanions, setParThreeCompanions] = useState<Record<number, ParThreeCompanion>>({})
+  const [parThreeChecks, setParThreeChecks] = useState<Record<number, ParThreeCompanionCheck>>({})
   const [searching, setSearching] = useState(false)
   const [findingNearby, setFindingNearby] = useState(false)
   const [nearbyNotice, setNearbyNotice] = useState<string | null>(null)
@@ -170,12 +174,10 @@ export function CourseBuilder() {
   // companion option (if any) pops in under its result once found. Capped
   // to the top 3 results to keep this to a reasonable number of requests.
   function checkParThreeCompanions(results: GeocodeResult[]) {
-    setParThreeCompanions({})
+    setParThreeChecks({})
     results.slice(0, 3).forEach((r, i) => {
       findParThreeCompanion({ lat: r.lat, lng: r.lng }, r.boundary)
-        .then((companion) => {
-          if (companion) setParThreeCompanions((prev) => ({ ...prev, [i]: companion }))
-        })
+        .then((check) => setParThreeChecks((prev) => ({ ...prev, [i]: check })))
         .catch(() => {})
     })
   }
@@ -613,7 +615,9 @@ export function CourseBuilder() {
 
           {searchResults.map((r, i) => {
             const mainName = r.displayName.split(',')[0]
-            const companion = parThreeCompanions[i]
+            const check = parThreeChecks[i]
+            const companion = check?.companion
+            const leftoverTypes = check ? Object.entries(check.leftoverFeatureCounts) : []
             return (
               <div key={i} className="flex flex-col gap-2">
                 <button
@@ -626,11 +630,31 @@ export function CourseBuilder() {
                 {companion && (
                   <button
                     onClick={() => selectParThreeCompanion(mainName, companion)}
-                    className="text-left glass-solid rounded-xl p-3 text-sm ml-4"
+                    className="text-left glass-solid rounded-xl p-3 ml-4"
                     style={inkSecondary}
                   >
-                    ⛳ {mainName} — Par 3 course ({companion.holes.length} holes)
+                    <div className="text-sm font-semibold" style={ink}>
+                      ⛳ Par 3 course ({companion.holes.length} holes)
+                    </div>
+                    <div className="text-xs" style={inkMuted}>
+                      {mainName}
+                    </div>
                   </button>
+                )}
+                {check && !companion && (
+                  <p className="text-xs ml-4" style={inkMuted}>
+                    {leftoverTypes.length === 0
+                      ? 'No additional golf data found nearby on OpenStreetMap — no par-3 course to offer.'
+                      : `Found extra OSM golf data nearby (${leftoverTypes
+                          .map(([type, count]) => `${count} ${type}`)
+                          .join(
+                            ', ',
+                          )}) but not a complete numbered course${
+                          check.leftoverHoleRefs.length > 0
+                            ? ` — hole refs seen: ${check.leftoverHoleRefs.join(', ')}`
+                            : ''
+                        }.`}
+                  </p>
                 )}
               </div>
             )
