@@ -1,6 +1,7 @@
 import { db } from '../db/db'
 import { bearingDeg, distanceYards, type LatLng } from './geo'
 import type { Shot } from '../db/schema'
+import { getCompletedRoundIds } from './completedRounds'
 
 export interface ClubDispersion {
   club: string
@@ -21,8 +22,10 @@ export interface ClubDispersion {
  * distance.
  */
 export async function computeClubDispersion(): Promise<ClubDispersion[]> {
-  const allShots = await db.shots.toArray()
-  const swings = allShots.filter((s) => s.club && s.type !== 'putt' && s.type !== 'penalty')
+  const [allShots, completedRoundIds] = await Promise.all([db.shots.toArray(), getCompletedRoundIds()])
+  const swings = allShots.filter(
+    (s) => completedRoundIds.has(s.roundId) && s.club && s.type !== 'putt' && s.type !== 'penalty',
+  )
   if (swings.length === 0) return []
 
   const byHoleKey = new Map<string, Shot[]>()

@@ -7,6 +7,7 @@ import { HoleScoreTable } from '../components/HoleScoreTable'
 import { EditHoleScoreModal } from '../components/EditHoleScoreModal'
 import { SatelliteMap, type MapPin, type MapOutline } from '../components/SatelliteMap'
 import { db, newId } from '../db/db'
+import { deleteRound } from '../db/roundActions'
 import type { Course, Hole, HoleScore, PenaltyType, Round, Tee, TeeShotLie } from '../db/schema'
 import { destinationPoint, distanceYards, getCurrentPosition, type LatLng } from '../lib/geo'
 import {
@@ -98,6 +99,8 @@ export function RoundActive() {
   const [nextTeeCooldown, setNextTeeCooldown] = useState(0)
   const [capturingNextTee, setCapturingNextTee] = useState(false)
   const [editingScore, setEditingScore] = useState<HoleScore | null>(null)
+  const [confirmAbandon, setConfirmAbandon] = useState(false)
+  const [abandoning, setAbandoning] = useState(false)
 
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
   const clubChoices = useMemo(() => {
@@ -508,6 +511,19 @@ export function RoundActive() {
     }
   }
 
+  // Stops the round without finishing it. Never marked `completed`, so it
+  // was never counted in any stat — deleting it changes nothing there.
+  async function abandonRound() {
+    if (!round) return
+    setAbandoning(true)
+    try {
+      await deleteRound(round.id)
+      navigate('/')
+    } finally {
+      setAbandoning(false)
+    }
+  }
+
   function onTouchStart(e: TouchEvent) {
     touchStartX.current = e.touches[0].clientX
   }
@@ -572,6 +588,13 @@ export function RoundActive() {
           {tee.name} tees
         </span>
       </div>
+      <button
+        onClick={() => setConfirmAbandon(true)}
+        className="self-start text-xs underline -mt-2"
+        style={inkMuted}
+      >
+        Abandon round
+      </button>
 
       {holeSummary ? (
         <div className="flex flex-col gap-3">
@@ -961,6 +984,23 @@ export function RoundActive() {
                 {PENALTY_LABELS[type]} (+1 stroke)
               </BigButton>
             ))}
+          </div>
+        </Modal>
+      )}
+
+      {confirmAbandon && (
+        <Modal onClose={() => setConfirmAbandon(false)} title="Abandon this round?">
+          <p className="text-sm mb-4" style={inkSecondary}>
+            This permanently deletes the round, including any holes already scored — it was never
+            finished, so it was never counted in your stats. This can't be undone.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <BigButton variant="danger" onClick={abandonRound} disabled={abandoning}>
+              {abandoning ? 'Abandoning…' : 'Abandon round'}
+            </BigButton>
+            <BigButton variant="secondary" onClick={() => setConfirmAbandon(false)} disabled={abandoning}>
+              Keep playing
+            </BigButton>
           </div>
         </Modal>
       )}

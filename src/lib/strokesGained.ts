@@ -1,6 +1,7 @@
 import { db } from '../db/db'
 import { distanceYards } from './geo'
 import type { TeeShotLie } from '../db/schema'
+import { getCompletedRoundIds } from './completedRounds'
 
 // Approximate baselines (expected strokes to hole out), loosely modeled on
 // published strokes-gained research but hand-simplified — not official PGA
@@ -82,8 +83,10 @@ export interface StrokesGainedSummary {
  * rough estimate, not an official number.
  */
 export async function computeStrokesGainedOffTee(): Promise<StrokesGainedSummary> {
-  const scores = await db.holeScores.toArray()
-  const eligible = scores.filter((s) => s.teeShotLie !== null && s.par >= 4)
+  const [scores, completedRoundIds] = await Promise.all([db.holeScores.toArray(), getCompletedRoundIds()])
+  const eligible = scores.filter(
+    (s) => completedRoundIds.has(s.roundId) && s.teeShotLie !== null && s.par >= 4,
+  )
   if (eligible.length === 0) return { avgSgOffTee: null, shotCount: 0, byClub: {} }
 
   const results: number[] = []

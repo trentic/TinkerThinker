@@ -1,5 +1,6 @@
 import { db } from '../db/db'
 import type { HoleScore, TeeShotLie } from '../db/schema'
+import { getCompletedRoundIds } from './completedRounds'
 
 export interface RoundSummary {
   roundId: string
@@ -124,10 +125,15 @@ export interface ClubStats {
 // the user typed into their bag in Settings (TrackMan-style seed value),
 // clearly marked as self-reported rather than measured.
 export async function computeClubDistances(): Promise<ClubStats[]> {
-  const [shots, bagClubs] = await Promise.all([db.shots.toArray(), db.bagClubs.toArray()])
+  const [shots, bagClubs, completedRoundIds] = await Promise.all([
+    db.shots.toArray(),
+    db.bagClubs.toArray(),
+    getCompletedRoundIds(),
+  ])
   const byClub = new Map<string, number[]>()
 
   for (const shot of shots) {
+    if (!completedRoundIds.has(shot.roundId)) continue
     if (!shot.club || !shot.distanceYardsFromPrev || shot.type === 'putt') continue
     if (shot.distanceYardsFromPrev < 20) continue // filter out noise/mis-marks
     const list = byClub.get(shot.club) ?? []

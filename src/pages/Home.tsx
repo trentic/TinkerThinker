@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal'
 import { OnboardingTutorial } from '../components/OnboardingTutorial'
 import { daysSinceLastBackup } from '../db/backup'
 import { checkCourseDeletable, deleteCourseCascade } from '../db/courseActions'
+import { deleteRound } from '../db/roundActions'
 import { computeCourseSummary, type CourseSummary } from '../lib/courseStats'
 import { hasSeenOnboarding, isDebugLocationEnabled, setOnboardingSeen } from '../lib/settings'
 import { toParLabel } from '../lib/format'
@@ -25,6 +26,8 @@ export function Home() {
   const [deleting, setDeleting] = useState(false)
   const [summaries, setSummaries] = useState<Record<string, CourseSummary>>({})
   const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
+  const [deleteRoundTarget, setDeleteRoundTarget] = useState<{ id: string; courseName: string } | null>(null)
+  const [deletingRound, setDeletingRound] = useState(false)
   const tees = useLiveQuery(
     () => (pickingCourseId ? db.tees.where('courseId').equals(pickingCourseId).sortBy('order') : []),
     [pickingCourseId],
@@ -44,12 +47,20 @@ export function Home() {
     return listedCourses.filter((c) => c.name.toLowerCase().includes(q))
   }, [listedCourses, query])
 
-  const resumeRound = useMemo(() => {
-    const incomplete = (rounds ?? []).filter((r) => !r.completed)
-    if (incomplete.length === 0) return null
-    return incomplete.reduce((latest, r) => (r.date > latest.date ? r : latest), incomplete[0])
-  }, [rounds])
-  const resumeCourseName = allCourses?.find((c) => c.id === resumeRound?.courseId)?.name
+  // Every unfinished round, newest first — not just the one most recently
+  // started, so an older one you stepped away from doesn't become
+  // permanently stuck with no way to resume or delete it.
+  const incompleteRounds = useMemo(
+    () => (rounds ?? []).filter((r) => !r.completed).sort((a, b) => b.date - a.date),
+    [rounds],
+  )
+  const resumeRound = incompleteRounds[0] ?? null
+  const otherIncompleteRounds = incompleteRounds.slice(1)
+  const courseNameById = useMemo(
+    () => new Map((allCourses ?? []).map((c) => [c.id, c.name])),
+    [allCourses],
+  )
+  const resumeCourseName = resumeRound ? courseNameById.get(resumeRound.courseId) : undefined
 
   useEffect(() => {
     if (!listedCourses) return
@@ -113,6 +124,17 @@ export function Home() {
     }
   }
 
+  async function confirmDeleteRound() {
+    if (!deleteRoundTarget) return
+    setDeletingRound(true)
+    try {
+      await deleteRound(deleteRoundTarget.id)
+      setDeleteRoundTarget(null)
+    } finally {
+      setDeletingRound(false)
+    }
+  }
+
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
       <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>
@@ -131,22 +153,60 @@ export function Home() {
       )}
 
       {resumeRound && (
-        <Link
-          to={`/round/${resumeRound.id}`}
-          className="glass rounded-xl p-3 flex items-center justify-between"
-        >
-          <div>
+        <div className="glass rounded-xl p-3 flex items-center justify-between gap-3">
+          <Link to={`/round/${resumeRound.id}`} className="min-w-0 flex-1">
             <div className="text-sm font-medium" style={{ color: 'var(--ink-secondary)' }}>
               Round in progress
             </div>
-            <div className="font-semibold" style={{ color: 'var(--ink)' }}>
+            <div className="font-semibold truncate" style={{ color: 'var(--ink)' }}>
               {resumeCourseName ?? 'Unknown course'}
             </div>
+          </Link>
+          <div className="flex items-center gap-3 shrink-0">
+            <Link to={`/round/${resumeRound.id}`} className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+              Resume ›
+            </Link>
+            <button
+              onClick={() =>
+                setDeleteRoundTarget({ id: resumeRound.id, courseName: resumeCourseName ?? 'this course' })
+              }
+              className="text-xs underline"
+              style={{ color: 'var(--ink-muted)' }}
+            >
+              Delete
+            </button>
           </div>
-          <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
-            Resume ›
-          </span>
-        </Link>
+        </div>
+      )}
+
+      {otherIncompleteRounds.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
+            Other rounds in progress
+          </p>
+          {otherIncompleteRounds.map((r) => {
+            const name = courseNameById.get(r.courseId) ?? 'Unknown course'
+            return (
+              <div key={r.id} className="glass-solid rounded-xl p-3 flex items-center justify-between gap-3">
+                <span className="text-sm truncate" style={{ color: 'var(--ink)' }}>
+                  {name} · {new Date(r.date).toLocaleDateString()}
+                </span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <Link to={`/round/${r.id}`} className="text-xs font-medium underline" style={{ color: 'var(--ink)' }}>
+                    Resume
+                  </Link>
+                  <button
+                    onClick={() => setDeleteRoundTarget({ id: r.id, courseName: name })}
+                    className="text-xs underline"
+                    style={{ color: 'var(--ink-muted)' }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       {backupAge !== null && backupAge >= 14 && (
@@ -314,6 +374,24 @@ export function Home() {
             {deleteBlockedReason}
           </p>
           <BigButton onClick={() => setDeleteBlockedReason(null)}>Got it</BigButton>
+        </Modal>
+      )}
+
+      {deleteRoundTarget && (
+        <Modal title="Delete this round?" onClose={() => setDeleteRoundTarget(null)}>
+          <p className="text-sm mb-4" style={{ color: 'var(--ink-secondary)' }}>
+            This permanently deletes the in-progress round at {deleteRoundTarget.courseName}, including
+            any holes already scored. It was never finished, so it was never counted in your stats —
+            deleting it doesn't change anything there.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <BigButton variant="danger" onClick={confirmDeleteRound} disabled={deletingRound}>
+              {deletingRound ? 'Deleting…' : 'Delete'}
+            </BigButton>
+            <BigButton variant="secondary" onClick={() => setDeleteRoundTarget(null)} disabled={deletingRound}>
+              Cancel
+            </BigButton>
+          </div>
         </Modal>
       )}
 
