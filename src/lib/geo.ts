@@ -80,23 +80,54 @@ function fakeGeolocationPosition(pos: LatLng): GeolocationPosition {
   }
 }
 
+// A single getCurrentPosition() call often hands back the phone's first,
+// coarse fix — cell-tower/WiFi triangulation — before the GPS chip has
+// locked onto enough satellites to narrow it down, sometimes off by 50m+.
+// Below this accuracy (meters), a fix is considered good enough to stop
+// waiting for a better one.
+const GOOD_ENOUGH_ACCURACY_M = 8
+
 export function getCurrentPosition(options?: PositionOptions): Promise<GeolocationPosition> {
   // Testing-only mock GPS (see lib/debugLocation.ts) — deliberately checked
   // before touching real geolocation at all.
   const mock = readMockPositionIfDebugging()
   if (mock) return Promise.resolve(fakeGeolocationPosition(mock))
 
+  if (!('geolocation' in navigator)) {
+    return Promise.reject(new Error('Geolocation is not available on this device/browser.'))
+  }
+
+  const timeoutMs = options?.timeout ?? 8_000
+
+  // watchPosition instead of a single getCurrentPosition call: keep the most
+  // accurate fix seen while the GPS chip's lock improves, stopping early
+  // once it's good enough rather than settling for whatever arrived first.
   return new Promise((resolve, reject) => {
-    if (!('geolocation' in navigator)) {
-      reject(new Error('Geolocation is not available on this device/browser.'))
-      return
+    let best: GeolocationPosition | null = null
+    let settled = false
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      navigator.geolocation.clearWatch(watchId)
+      if (best) resolve(best)
+      else reject(new Error('Could not get a GPS fix.'))
     }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 10_000,
-      maximumAge: 5_000,
-      ...options,
-    })
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos
+        if (pos.coords.accuracy <= GOOD_ENOUGH_ACCURACY_M) finish()
+      },
+      () => {
+        // A mid-stream error only fails the call if no fix arrived at all —
+        // one flaky reading shouldn't discard an already-good one.
+        if (!best) finish()
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs, ...options },
+    )
+    const timer = setTimeout(finish, timeoutMs)
   })
 }
 

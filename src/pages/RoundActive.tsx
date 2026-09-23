@@ -59,6 +59,10 @@ export function RoundActive() {
   const [myPos, setMyPos] = useState<LatLng | null>(null)
   const [myPosAccuracyM, setMyPosAccuracyM] = useState<number | null>(null)
   const [locating, setLocating] = useState(false)
+  // A user-tapped correction, for when the GPS fix is off — takes over from
+  // live GPS until the hole changes or "Use GPS instead" is tapped.
+  const [manualPosition, setManualPosition] = useState<LatLng | null>(null)
+  const [settingMyLocation, setSettingMyLocation] = useState(false)
   const [target, setTarget] = useState<LatLng | null>(null)
   const [playsLike, setPlaysLike] = useState<PlaysLikeResult | null>(null)
   const [wind, setWind] = useState<WindInfo | null>(null)
@@ -158,6 +162,8 @@ export function RoundActive() {
     setArmedClub(null)
     setPanel('shot')
     setShowMap(false)
+    setManualPosition(null)
+    setSettingMyLocation(false)
     // Debug mode: start each hole with the simulated position at this
     // hole's tee, like you just walked up to it, instead of wherever
     // testing left off on the previous hole.
@@ -181,6 +187,9 @@ export function RoundActive() {
   }, [holeSummary, nextTeeCooldown])
 
   async function refreshMyPosition(): Promise<LatLng | null> {
+    // A manual correction stands in for GPS until the hole changes or the
+    // golfer explicitly asks to go back to live location.
+    if (manualPosition) return manualPosition
     setLocating(true)
     try {
       const pos = await getCurrentPosition()
@@ -193,6 +202,20 @@ export function RoundActive() {
     } finally {
       setLocating(false)
     }
+  }
+
+  // Tapped on the map while "Fix my location" is armed — overrides GPS with
+  // exactly where the golfer says they're standing.
+  function setMyLocationManually(pos: LatLng) {
+    setManualPosition(pos)
+    setMyPos(pos)
+    setMyPosAccuracyM(0)
+    setSettingMyLocation(false)
+  }
+
+  function useGpsInstead() {
+    setManualPosition(null)
+    void refreshMyPosition()
   }
 
   async function setHoleTeeCoordinate(hole: Hole, teeId: string, pos: LatLng) {
@@ -684,17 +707,44 @@ export function RoundActive() {
                   center={mapCenter}
                   pins={pins}
                   outlines={outlines}
-                  onMapClick={(pos) => void handleTapTarget(pos)}
+                  onMapClick={(pos) => {
+                    if (settingMyLocation) setMyLocationManually(pos)
+                    else void handleTapTarget(pos)
+                  }}
                 />
                 {locating && (
                   <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
                     Locating…
                   </div>
                 )}
+                {settingMyLocation && (
+                  <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                    Tap where you're standing
+                  </div>
+                )}
               </div>
               <p className="text-xs -mt-1" style={inkMuted}>
-                Tap where you're aiming.
+                {settingMyLocation ? "Tap the map where you're actually standing." : "Tap where you're aiming."}
               </p>
+
+              <div className="flex items-center justify-between gap-2 -mt-1">
+                <BigButton
+                  variant={settingMyLocation ? 'primary' : 'ghost'}
+                  onClick={() => setSettingMyLocation((v) => !v)}
+                >
+                  {settingMyLocation ? 'Cancel' : "📍 GPS off? Tap map to fix my spot"}
+                </BigButton>
+                {manualPosition && !settingMyLocation && (
+                  <button onClick={useGpsInstead} className="text-xs underline shrink-0" style={inkMuted}>
+                    Use GPS instead
+                  </button>
+                )}
+              </div>
+              {manualPosition && (
+                <p className="text-xs -mt-1" style={inkMuted}>
+                  Using the location you tapped, not GPS.
+                </p>
+              )}
 
               {yardageLoading && (
                 <div className="text-sm" style={inkSecondary}>
@@ -718,9 +768,10 @@ export function RoundActive() {
                   )}
                   <div className="text-xs" style={inkMuted}>
                     Estimate — not laser-precision.
-                    {myPosAccuracyM !== null && !debugLocationEnabled && (
-                      <> GPS accurate to ±{Math.round(myPosAccuracyM)}m right now.</>
-                    )}
+                    {manualPosition
+                      ? ' Measured from your tapped location, not GPS.'
+                      : myPosAccuracyM !== null &&
+                        !debugLocationEnabled && <> GPS accurate to ±{Math.round(myPosAccuracyM)}m right now.</>}
                   </div>
                 </div>
               )}
