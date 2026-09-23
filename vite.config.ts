@@ -1,16 +1,36 @@
+import { execSync } from 'node:child_process'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vite'
+import { readFileSync } from 'node:fs'
 
 // Project pages on GitHub Pages serve from a /<repo>/ subpath. Set GH_PAGES=1
 // only for that build (see `npm run build:pages`); local dev and other
 // hosts (Vercel/Netlify) keep '/'.
 const base = process.env.GH_PAGES ? '/TinkerThinker/' : '/'
 
+// Baked in at build time so Settings can show exactly which build is
+// running — the git commit is the real "did this deploy land" signal
+// (always accurate, nothing to remember to bump); falls back gracefully
+// if git isn't available in the build environment.
+function shortCommitHash(): string {
+  try {
+    return execSync('git rev-parse --short HEAD').toString().trim()
+  } catch {
+    return 'dev'
+  }
+}
+const appVersion = JSON.parse(readFileSync('./package.json', 'utf-8')).version as string
+
 // https://vite.dev/config/
 export default defineConfig({
   base,
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __BUILD_COMMIT__: JSON.stringify(shortCommitHash()),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     tailwindcss(),

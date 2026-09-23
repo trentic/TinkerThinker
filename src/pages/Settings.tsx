@@ -5,6 +5,7 @@ import { OnboardingTutorial } from '../components/OnboardingTutorial'
 import { exportBackup, importBackup, getLastBackupAt } from '../db/backup'
 import { db } from '../db/db'
 import { COMMON_CLUBS } from '../lib/clubs'
+import { buildLabel } from '../lib/buildInfo'
 import {
   isMulliganEnabled,
   setMulliganEnabled,
@@ -344,6 +345,10 @@ export function Settings() {
           {debugLocationEnabled ? 'On' : 'Off'}
         </button>
       </div>
+
+      <p className="text-xs text-center" style={{ color: 'var(--ink-muted)' }}>
+        {buildLabel()}
+      </p>
 
       {showOnboarding && (
         <OnboardingTutorial
