@@ -10,6 +10,7 @@ import { checkCourseDeletable, deleteCourseCascade } from '../db/courseActions'
 import { computeCourseSummary, type CourseSummary } from '../lib/courseStats'
 import { hasSeenOnboarding, isDebugLocationEnabled, setOnboardingSeen } from '../lib/settings'
 import { toParLabel } from '../lib/format'
+import { startParThreeRound } from '../lib/parThreeMode'
 
 type HoleSelection = 'all18' | 'front9' | 'back9'
 
@@ -25,18 +26,26 @@ export function Home() {
   const [deleting, setDeleting] = useState(false)
   const [summaries, setSummaries] = useState<Record<string, CourseSummary>>({})
   const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
+  const [pickingParThreeHoles, setPickingParThreeHoles] = useState(false)
+  const [startingParThree, setStartingParThree] = useState(false)
+  const [parThreeError, setParThreeError] = useState<string | null>(null)
   const tees = useLiveQuery(
     () => (pickingCourseId ? db.tees.where('courseId').equals(pickingCourseId).sortBy('order') : []),
     [pickingCourseId],
   )
   const backupAge = daysSinceLastBackup()
 
+  // Par 3 Mode's standing course is real data (so its rounds count in Stats)
+  // but isn't something you "manage" like a mapped course, so it's kept out
+  // of this list.
+  const listedCourses = useMemo(() => allCourses?.filter((c) => !c.freeform), [allCourses])
+
   const courses = useMemo(() => {
-    if (!allCourses) return allCourses
+    if (!listedCourses) return listedCourses
     const q = query.trim().toLowerCase()
-    if (!q) return allCourses
-    return allCourses.filter((c) => c.name.toLowerCase().includes(q))
-  }, [allCourses, query])
+    if (!q) return listedCourses
+    return listedCourses.filter((c) => c.name.toLowerCase().includes(q))
+  }, [listedCourses, query])
 
   const resumeRound = useMemo(() => {
     const incomplete = (rounds ?? []).filter((r) => !r.completed)
@@ -46,19 +55,33 @@ export function Home() {
   const resumeCourseName = allCourses?.find((c) => c.id === resumeRound?.courseId)?.name
 
   useEffect(() => {
-    if (!allCourses) return
+    if (!listedCourses) return
     ;(async () => {
       const entries = await Promise.all(
-        allCourses.map(async (c) => [c.id, await computeCourseSummary(c.id)] as const),
+        listedCourses.map(async (c) => [c.id, await computeCourseSummary(c.id)] as const),
       )
       setSummaries(Object.fromEntries(entries))
     })()
-  }, [allCourses])
+  }, [listedCourses])
 
   async function startRound(courseId: string, teeId: string, holeNumbers: number[]) {
     const id = newId()
     await db.rounds.add({ id, courseId, teeId, date: Date.now(), completed: false, holeNumbers })
     navigate(`/round/${id}`)
+  }
+
+  async function beginParThreeRound(holeCount: 3 | 9 | 18) {
+    setStartingParThree(true)
+    setParThreeError(null)
+    try {
+      const id = await startParThreeRound(holeCount)
+      setPickingParThreeHoles(false)
+      navigate(`/round/${id}`)
+    } catch {
+      setParThreeError("Couldn't get your location — enable location access and try again.")
+    } finally {
+      setStartingParThree(false)
+    }
   }
 
   function startPickingCourse(courseId: string) {
@@ -158,12 +181,43 @@ export function Home() {
         + Add a course
       </BigButton>
 
+      {pickingParThreeHoles ? (
+        <div className="glass rounded-2xl p-4 flex flex-col gap-3">
+          <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+            Par 3 Mode — how many holes?
+          </p>
+          <p className="text-xs -mt-2" style={{ color: 'var(--ink-muted)' }}>
+            No course setup needed. Every hole is a par 3, and the yardage map centers on wherever
+            you're standing.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {([3, 9, 18] as const).map((n) => (
+              <BigButton key={n} onClick={() => beginParThreeRound(n)} disabled={startingParThree}>
+                {startingParThree ? '…' : `${n} holes`}
+              </BigButton>
+            ))}
+          </div>
+          {parThreeError && (
+            <p className="text-xs" style={{ color: '#8a5a12' }}>
+              {parThreeError}
+            </p>
+          )}
+          <BigButton variant="ghost" onClick={() => setPickingParThreeHoles(false)} disabled={startingParThree}>
+            Cancel
+          </BigButton>
+        </div>
+      ) : (
+        <BigButton variant="secondary" onClick={() => setPickingParThreeHoles(true)} className="w-full">
+          ⛳ Quick Par 3 round
+        </BigButton>
+      )}
+
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-muted)' }}>
           Your courses
         </h2>
 
-        {allCourses && allCourses.length > 3 && (
+        {listedCourses && listedCourses.length > 3 && (
           <input
             className="glass-solid rounded-xl px-4 py-2.5 text-sm"
             style={{ color: 'var(--ink)' }}
@@ -173,12 +227,12 @@ export function Home() {
           />
         )}
 
-        {allCourses?.length === 0 && (
+        {listedCourses?.length === 0 && (
           <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>
             No courses yet. Add one to start tracking rounds.
           </p>
         )}
-        {allCourses && allCourses.length > 0 && courses?.length === 0 && (
+        {listedCourses && listedCourses.length > 0 && courses?.length === 0 && (
           <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>
             No courses match "{query}".
           </p>

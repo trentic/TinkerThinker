@@ -505,18 +505,23 @@ export function RoundActive() {
     )
   }
 
-  const mapCenter = currentHole.teeCoords[tee.id] ?? {
-    lat: currentHole.centerLat,
-    lng: currentHole.centerLng,
-  }
-  const pins: MapPin[] = [
-    {
-      id: 'hole',
-      position: { lat: currentHole.centerLat, lng: currentHole.centerLng },
-      label: 'C',
-      color: '#6b7280',
-    },
-  ]
+  // Par 3 Mode has no real fixed hole locations — the map should always
+  // follow wherever the golfer is actually standing, not a stale/arbitrary
+  // saved coordinate. A mapped course keeps the normal tee/hole-center
+  // fallback so it can be viewed before GPS has ever fixed on you.
+  const mapCenter = course.freeform
+    ? (myPos ?? currentHole.teeCoords[tee.id] ?? { lat: currentHole.centerLat, lng: currentHole.centerLng })
+    : (currentHole.teeCoords[tee.id] ?? { lat: currentHole.centerLat, lng: currentHole.centerLng })
+  const pins: MapPin[] = course.freeform
+    ? []
+    : [
+        {
+          id: 'hole',
+          position: { lat: currentHole.centerLat, lng: currentHole.centerLng },
+          label: 'C',
+          color: '#6b7280',
+        },
+      ]
   if (currentHole.greenLat && currentHole.greenLng) {
     pins.push({
       id: 'green',
@@ -788,7 +793,13 @@ export function RoundActive() {
                           </div>
                         )}
 
-                        <BigButton variant="secondary" onClick={() => setShowMap(true)}>
+                        <BigButton
+                          variant="secondary"
+                          onClick={() => {
+                            setShowMap(true)
+                            void refreshMyPosition()
+                          }}
+                        >
                           {playsLike
                             ? `📍 ${playsLike.playsLikeYards} yd plays like — recheck`
                             : '📍 Check yardage'}
