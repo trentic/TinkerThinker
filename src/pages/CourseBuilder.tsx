@@ -18,6 +18,7 @@ import {
   type LatLng,
 } from '../lib/geo'
 import { tryAutoMapHoles } from '../lib/courseAutoMap'
+import { findParThreeCompanion, type ParThreeCompanion } from '../lib/parThreeDetection'
 import { runScorecardOcr, type OcrDraftRow } from '../lib/scorecardOcr'
 
 type Step = 'locate' | 'checking' | 'confirm' | 'map' | 'tees' | 'review'
@@ -70,6 +71,10 @@ export function CourseBuilder() {
   const [holeCount, setHoleCount] = useState<9 | 18>(18)
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([])
+  // Par-3/executive companion found near a search result, keyed by that
+  // result's index — populated asynchronously after results come in, since
+  // it takes its own Overpass round-trip per result (see checkParThreeCompanions).
+  const [parThreeCompanions, setParThreeCompanions] = useState<Record<number, ParThreeCompanion>>({})
   const [searching, setSearching] = useState(false)
   const [findingNearby, setFindingNearby] = useState(false)
   const [nearbyNotice, setNearbyNotice] = useState<string | null>(null)
@@ -152,11 +157,27 @@ export function CourseBuilder() {
       const results = await searchCourseLocation(query)
       setSearchResults(results)
       if (results.length === 0) setLocateError("No matches found. Check the spelling, or map it manually below.")
+      else checkParThreeCompanions(results)
     } catch {
       setLocateError("Couldn't reach the course search service — check your connection, or map it manually below.")
     } finally {
       setSearching(false)
     }
+  }
+
+  // Runs alongside the results list rather than blocking it — each check is
+  // its own Overpass round-trip, so results appear immediately and a par-3
+  // companion option (if any) pops in under its result once found. Capped
+  // to the top 3 results to keep this to a reasonable number of requests.
+  function checkParThreeCompanions(results: GeocodeResult[]) {
+    setParThreeCompanions({})
+    results.slice(0, 3).forEach((r, i) => {
+      findParThreeCompanion({ lat: r.lat, lng: r.lng }, r.boundary)
+        .then((companion) => {
+          if (companion) setParThreeCompanions((prev) => ({ ...prev, [i]: companion }))
+        })
+        .catch(() => {})
+    })
   }
 
   async function selectLocation(pos: LatLng, name?: string, boundary?: OsmBoundaryRef) {
@@ -190,6 +211,29 @@ export function CourseBuilder() {
     }
     void checkForSiblingCourse(pos, name)
     void checkForOwnNearbyCourse(pos)
+  }
+
+  // Picked straight from the search results — bypasses fetchOsmGolfFeatures
+  // entirely since findParThreeCompanion already resolved the exact holes.
+  function selectParThreeCompanion(mainName: string, companion: ParThreeCompanion) {
+    const mappedHoleCount = companion.holes.length === 18 ? 18 : 9
+    setCenter(companion.center)
+    setCourseName(`${mainName} — Par 3`)
+    setHoleCount(mappedHoleCount)
+    setOsmFeatures([])
+    setHoles(
+      companion.holes.map((h) => ({
+        number: h.number,
+        centerLat: h.center.lat,
+        centerLng: h.center.lng,
+        outline: h.outline,
+        par: h.par ?? 3,
+        yardageByTee: {},
+      })),
+    )
+    setUsedAutoMap(true)
+    setStep('confirm')
+    void checkForOwnNearbyCourse(companion.center)
   }
 
   // Another named golf_course polygon close by (same facility, different
@@ -248,17 +292,17 @@ export function CourseBuilder() {
       try {
         const nearby = await fetchNearbyGolfCourses(here)
         if (nearby.length > 0) {
-          setSearchResults(
-            nearby.map((c) => ({
-              // Comma-separated so the "pick a result" handler's
-              // displayName.split(',')[0] pulls out just the course name,
-              // matching how Nominatim's results are formatted.
-              displayName: `${c.name}, ${(c.distanceMeters / 1000).toFixed(1)} km away`,
-              lat: c.point.lat,
-              lng: c.point.lng,
-              boundary: c.boundary,
-            })),
-          )
+          const results = nearby.map((c) => ({
+            // Comma-separated so the "pick a result" handler's
+            // displayName.split(',')[0] pulls out just the course name,
+            // matching how Nominatim's results are formatted.
+            displayName: `${c.name}, ${(c.distanceMeters / 1000).toFixed(1)} km away`,
+            lat: c.point.lat,
+            lng: c.point.lng,
+            boundary: c.boundary,
+          }))
+          setSearchResults(results)
+          checkParThreeCompanions(results)
         } else {
           setNearbyNotice("No named courses found nearby on OpenStreetMap — using your exact location instead.")
           await selectLocation(here)
@@ -567,18 +611,30 @@ export function CourseBuilder() {
             ))}
           </div>
 
-          {searchResults.map((r, i) => (
-            <button
-              key={i}
-              onClick={() =>
-                selectLocation({ lat: r.lat, lng: r.lng }, r.displayName.split(',')[0], r.boundary)
-              }
-              className="text-left glass rounded-xl p-3 text-sm"
-              style={inkSecondary}
-            >
-              {r.displayName}
-            </button>
-          ))}
+          {searchResults.map((r, i) => {
+            const mainName = r.displayName.split(',')[0]
+            const companion = parThreeCompanions[i]
+            return (
+              <div key={i} className="flex flex-col gap-2">
+                <button
+                  onClick={() => selectLocation({ lat: r.lat, lng: r.lng }, mainName, r.boundary)}
+                  className="text-left glass rounded-xl p-3 text-sm"
+                  style={inkSecondary}
+                >
+                  {r.displayName}
+                </button>
+                {companion && (
+                  <button
+                    onClick={() => selectParThreeCompanion(mainName, companion)}
+                    className="text-left glass-solid rounded-xl p-3 text-sm ml-4"
+                    style={inkSecondary}
+                  >
+                    ⛳ {mainName} — Par 3 course ({companion.holes.length} holes)
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
