@@ -199,7 +199,13 @@ export async function fetchNearbyGolfCourses(center: LatLng, radiusMeters = 20_0
     method: 'POST',
     body: query,
   })
-  if (!res.ok) return []
+  // A non-OK response (Overpass is rate-limited and does return 429/503
+  // under load) means the check failed, not that there's genuinely nothing
+  // nearby — conflating the two hid real outages behind "no siblings
+  // found". Throwing lets every caller already set up to catch a failure
+  // (useCurrentLocation, checkForSiblingCourse, findParThreeCompanion) tell
+  // the difference.
+  if (!res.ok) throw new Error(`Overpass nearby-courses query failed: ${res.status}`)
 
   const data = (await res.json()) as {
     elements: Array<{
@@ -294,7 +300,11 @@ export async function fetchOsmGolfFeatures(
     method: 'POST',
     body: query,
   })
-  if (!res.ok) return []
+  // Same reasoning as fetchNearbyGolfCourses above: a failed request must
+  // not look identical to "OSM has no hole data for this course" — that's
+  // exactly what made a real Overpass outage look like auto-map had
+  // silently stopped working instead of surfacing as a retryable error.
+  if (!res.ok) throw new Error(`Overpass golf-features query failed: ${res.status}`)
 
   const data = (await res.json()) as {
     elements: Array<{

@@ -84,6 +84,12 @@ export function CourseBuilder() {
   const [nearbyNotice, setNearbyNotice] = useState<string | null>(null)
   const [locateError, setLocateError] = useState<string | null>(null)
   const [findingManualCenter, setFindingManualCenter] = useState(false)
+  // Set when fetchOsmGolfFeatures itself fails (network/Overpass error) —
+  // distinct from OSM simply having no hole data for this course, so
+  // "auto-map failed to check" doesn't look identical to "nothing to auto-map".
+  const [autoMapCheckError, setAutoMapCheckError] = useState(false)
+  const [retryingAutoMap, setRetryingAutoMap] = useState(false)
+  const [lastLocationAttempt, setLastLocationAttempt] = useState<{ pos: LatLng; name?: string; boundary?: OsmBoundaryRef } | null>(null)
   const [center, setCenter] = useState<LatLng | null>(null)
   const [osmFeatures, setOsmFeatures] = useState<OsmGolfFeature[]>([])
   // Another OSM-mapped course at the same facility (e.g. the regulation
@@ -186,6 +192,8 @@ export function CourseBuilder() {
     setCenter(pos)
     if (name) setCourseName(name)
     setStep('checking')
+    setAutoMapCheckError(false)
+    setLastLocationAttempt({ pos, name, boundary })
     try {
       const features = await fetchOsmGolfFeatures(pos, { boundary })
       setOsmFeatures(features)
@@ -207,6 +215,11 @@ export function CourseBuilder() {
         setStep('map')
       }
     } catch {
+      // The OSM check itself failed (network/Overpass hiccup) — distinct
+      // from OSM genuinely having no hole data, which also lands here but
+      // isn't an error. Flagged so "map" step can tell you which happened
+      // instead of looking like auto-map just silently stopped working.
+      setAutoMapCheckError(true)
       setOsmFeatures([])
       setHoles([])
       setStep('map')
@@ -215,10 +228,21 @@ export function CourseBuilder() {
     void checkForOwnNearbyCourse(pos)
   }
 
+  async function retryAutoMapCheck() {
+    if (!lastLocationAttempt) return
+    setRetryingAutoMap(true)
+    try {
+      await selectLocation(lastLocationAttempt.pos, lastLocationAttempt.name, lastLocationAttempt.boundary)
+    } finally {
+      setRetryingAutoMap(false)
+    }
+  }
+
   // Picked straight from the search results — bypasses fetchOsmGolfFeatures
   // entirely since findParThreeCompanion already resolved the exact holes.
   function selectParThreeCompanion(mainName: string, companion: ParThreeCompanion) {
     const mappedHoleCount = companion.holes.length === 18 ? 18 : 9
+    setAutoMapCheckError(false)
     setCenter(companion.center)
     setCourseName(`${mainName} — Par 3`)
     setHoleCount(mappedHoleCount)
@@ -328,6 +352,7 @@ export function CourseBuilder() {
   async function setUpManually() {
     setFindingManualCenter(true)
     setLocateError(null)
+    setAutoMapCheckError(false)
     try {
       const pos = await getCurrentPosition()
       const here = { lat: pos.coords.latitude, lng: pos.coords.longitude }
@@ -563,7 +588,7 @@ export function CourseBuilder() {
               Same course — edit it instead
             </BigButton>
             <BigButton variant="ghost" onClick={confirmDifferentLayout}>
-              Different layout here (e.g. par-3 course) — keep adding
+              Different course at this location — keep adding
             </BigButton>
           </div>
         </div>
@@ -703,6 +728,18 @@ export function CourseBuilder() {
           >
             ‹ Back
           </button>
+          {autoMapCheckError && (
+            <div className="glass-solid rounded-xl p-3 flex flex-col gap-2">
+              <p className="text-xs" style={amberText}>
+                Couldn't check OpenStreetMap for this course (site busy or a network hiccup) —
+                that's different from OSM having no data. Worth trying again before mapping by
+                hand.
+              </p>
+              <BigButton variant="secondary" onClick={retryAutoMapCheck} disabled={retryingAutoMap}>
+                {retryingAutoMap ? 'Checking again…' : 'Try checking OpenStreetMap again'}
+              </BigButton>
+            </div>
+          )}
           <p className="text-sm" style={inkSecondary}>
             Tap the middle of hole {holes.length + 1} on the satellite view, in playing order.
             Gray dots are OpenStreetMap's reference data for this area, if any exists.

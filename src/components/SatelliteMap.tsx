@@ -51,6 +51,8 @@ interface SatelliteMapProps {
 }
 
 const OUTLINES_SOURCE_ID = 'fairway-outlines'
+const OUTLINES_FILL_SOURCE_ID = 'fairway-outlines-fill'
+const OUTLINES_CASING_LAYER_ID = 'fairway-outlines-casing'
 
 export function SatelliteMap({
   center,
@@ -120,7 +122,7 @@ export function SatelliteMap({
     if (!map) return
 
     const applyOutlines = () => {
-      const geojson: FeatureCollection = {
+      const lineGeojson: FeatureCollection = {
         type: 'FeatureCollection',
         features: outlines.map((o) => ({
           type: 'Feature',
@@ -131,13 +133,53 @@ export function SatelliteMap({
           },
         })),
       }
+      // A translucent fill wash, so a trace still reads clearly even if the
+      // line itself is thin or the shape isn't a fully closed ring —
+      // explicitly closing it first, since an open GeoJSON Polygon ring
+      // either fails to render or renders wrong.
+      const fillGeojson: FeatureCollection = {
+        type: 'FeatureCollection',
+        features: outlines
+          .filter((o) => o.coordinates.length >= 3)
+          .map((o) => {
+            const ring = o.coordinates.map((p): [number, number] => [p.lng, p.lat])
+            const [fx, fy] = ring[0]
+            const [lx, ly] = ring[ring.length - 1]
+            const closedRing = fx === lx && fy === ly ? ring : [...ring, ring[0]]
+            return {
+              type: 'Feature' as const,
+              properties: { color: o.color ?? '#f59e0b' },
+              geometry: { type: 'Polygon' as const, coordinates: [closedRing] },
+            }
+          }),
+      }
 
-      const existing = map.getSource(OUTLINES_SOURCE_ID) as GeoJSONSource | undefined
-      if (existing) {
-        existing.setData(geojson)
+      const existingLine = map.getSource(OUTLINES_SOURCE_ID) as GeoJSONSource | undefined
+      const existingFill = map.getSource(OUTLINES_FILL_SOURCE_ID) as GeoJSONSource | undefined
+      if (existingLine && existingFill) {
+        existingLine.setData(lineGeojson)
+        existingFill.setData(fillGeojson)
         return
       }
-      map.addSource(OUTLINES_SOURCE_ID, { type: 'geojson', data: geojson })
+
+      map.addSource(OUTLINES_FILL_SOURCE_ID, { type: 'geojson', data: fillGeojson })
+      map.addLayer({
+        id: OUTLINES_FILL_SOURCE_ID,
+        type: 'fill',
+        source: OUTLINES_FILL_SOURCE_ID,
+        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.3 },
+      })
+
+      map.addSource(OUTLINES_SOURCE_ID, { type: 'geojson', data: lineGeojson })
+      // A dark casing under the bright line so it stays visible against
+      // any background — the previous plain thin line was easy to miss.
+      map.addLayer({
+        id: OUTLINES_CASING_LAYER_ID,
+        type: 'line',
+        source: OUTLINES_SOURCE_ID,
+        paint: { 'line-color': '#000000', 'line-width': 6, 'line-opacity': 0.5 },
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+      })
       map.addLayer({
         id: OUTLINES_SOURCE_ID,
         type: 'line',
@@ -145,7 +187,7 @@ export function SatelliteMap({
         paint: {
           'line-color': ['get', 'color'],
           'line-width': 3,
-          'line-opacity': 0.9,
+          'line-opacity': 1,
         },
         layout: { 'line-join': 'round', 'line-cap': 'round' },
       })
