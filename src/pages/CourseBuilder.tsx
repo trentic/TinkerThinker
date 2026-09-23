@@ -8,9 +8,13 @@ import {
   searchCourseLocation,
   fetchOsmGolfFeatures,
   fetchNearbyGolfCourses,
+  fetchSiblingCourses,
   getCurrentPosition,
+  distanceMeters,
   type GeocodeResult,
   type OsmGolfFeature,
+  type OsmBoundaryRef,
+  type NearbyCourse,
   type LatLng,
 } from '../lib/geo'
 import { tryAutoMapHoles } from '../lib/courseAutoMap'
@@ -73,6 +77,18 @@ export function CourseBuilder() {
   const [findingManualCenter, setFindingManualCenter] = useState(false)
   const [center, setCenter] = useState<LatLng | null>(null)
   const [osmFeatures, setOsmFeatures] = useState<OsmGolfFeature[]>([])
+  // Another OSM-mapped course at the same facility (e.g. the regulation
+  // course's par-3/executive sibling) — offered as a switch, not forced.
+  const [siblingCourse, setSiblingCourse] = useState<NearbyCourse | null>(null)
+  const [dismissedSiblingNames, setDismissedSiblingNames] = useState<Set<string>>(new Set())
+  // A course already saved on this device, close enough that this might be
+  // the same place — catches facilities OSM doesn't separate at all.
+  const [ownNearbyCourse, setOwnNearbyCourse] = useState<{
+    id: string
+    name: string
+    distanceMeters: number
+  } | null>(null)
+  const [dismissedOwnCourseId, setDismissedOwnCourseId] = useState<string | null>(null)
   const [holes, setHoles] = useState<DraftHole[]>([])
   const [tees, setTees] = useState<DraftTee[]>(
     isEditing ? [] : [{ id: newId(), name: 'White', color: '#e5e7eb' }],
@@ -143,12 +159,12 @@ export function CourseBuilder() {
     }
   }
 
-  async function selectLocation(pos: LatLng, name?: string) {
+  async function selectLocation(pos: LatLng, name?: string, boundary?: OsmBoundaryRef) {
     setCenter(pos)
     if (name) setCourseName(name)
     setStep('checking')
     try {
-      const features = await fetchOsmGolfFeatures(pos)
+      const features = await fetchOsmGolfFeatures(pos, { boundary })
       setOsmFeatures(features)
       const auto = tryAutoMapHoles(features, holeCount)
       if (auto) {
@@ -172,6 +188,54 @@ export function CourseBuilder() {
       setHoles([])
       setStep('map')
     }
+    void checkForSiblingCourse(pos, name)
+    void checkForOwnNearbyCourse(pos)
+  }
+
+  // Another named golf_course polygon close by (same facility, different
+  // layout) — e.g. picking the regulation course when the par-3 course is
+  // 200m away. Informational only: never blocks the flow, just offers a switch.
+  async function checkForSiblingCourse(pos: LatLng, excludeName?: string) {
+    try {
+      const siblings = await fetchSiblingCourses(pos, excludeName)
+      setSiblingCourse(siblings.find((s) => !dismissedSiblingNames.has(s.name)) ?? null)
+    } catch {
+      setSiblingCourse(null)
+    }
+  }
+
+  async function switchToSibling(sibling: NearbyCourse) {
+    setDismissedSiblingNames((prev) => new Set(prev).add(courseName))
+    setSiblingCourse(null)
+    await selectLocation(sibling.point, sibling.name, sibling.boundary)
+  }
+
+  function dismissSibling() {
+    if (siblingCourse) setDismissedSiblingNames((prev) => new Set(prev).add(siblingCourse.name))
+    setSiblingCourse(null)
+  }
+
+  // A course already saved on this device near this exact spot — catches
+  // the case OSM sibling detection can't: two layouts sharing one
+  // unseparated polygon, or a facility that isn't mapped as multiple
+  // courses on OSM at all. Pure local lookup, works offline.
+  async function checkForOwnNearbyCourse(pos: LatLng) {
+    const existing = await db.courses.toArray()
+    let closest: { id: string; name: string; distanceMeters: number } | null = null
+    for (const c of existing) {
+      if (isEditing && c.id === editingCourseId) continue
+      if (c.id === dismissedOwnCourseId) continue
+      const d = distanceMeters(pos, { lat: c.centerLat, lng: c.centerLng })
+      if (d <= 500 && (!closest || d < closest.distanceMeters)) {
+        closest = { id: c.id, name: c.name, distanceMeters: d }
+      }
+    }
+    setOwnNearbyCourse(closest)
+  }
+
+  function confirmDifferentLayout() {
+    if (ownNearbyCourse) setDismissedOwnCourseId(ownNearbyCourse.id)
+    setOwnNearbyCourse(null)
   }
 
   async function useCurrentLocation() {
@@ -192,6 +256,7 @@ export function CourseBuilder() {
               displayName: `${c.name}, ${(c.distanceMeters / 1000).toFixed(1)} km away`,
               lat: c.point.lat,
               lng: c.point.lng,
+              boundary: c.boundary,
             })),
           )
         } else {
@@ -219,10 +284,12 @@ export function CourseBuilder() {
     setLocateError(null)
     try {
       const pos = await getCurrentPosition()
-      setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      const here = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+      setCenter(here)
       setOsmFeatures([])
       setHoles([])
       setStep('map')
+      void checkForOwnNearbyCourse(here)
     } catch {
       setLocateError('Could not get your location — check that location permissions are allowed for this site.')
     } finally {
@@ -421,6 +488,41 @@ export function CourseBuilder() {
         {isEditing ? 'Edit course' : 'Add a course'}
       </h1>
 
+      {siblingCourse && step !== 'locate' && step !== 'checking' && (
+        <div className="glass-solid rounded-xl p-3 flex flex-col gap-2">
+          <p className="text-xs" style={inkSecondary}>
+            This facility also has <strong>{siblingCourse.name}</strong> mapped on OpenStreetMap, ~
+            {Math.round(siblingCourse.distanceMeters)}m from here (maybe its par-3/executive course?). Is
+            that the one you meant?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <BigButton variant="secondary" onClick={() => void switchToSibling(siblingCourse)}>
+              Switch to {siblingCourse.name}
+            </BigButton>
+            <BigButton variant="ghost" onClick={dismissSibling}>
+              No, keep this one
+            </BigButton>
+          </div>
+        </div>
+      )}
+
+      {ownNearbyCourse && step !== 'locate' && step !== 'checking' && (
+        <div className="glass-solid rounded-xl p-3 flex flex-col gap-2">
+          <p className="text-xs" style={amberText}>
+            You already have <strong>{ownNearbyCourse.name}</strong> saved ~
+            {Math.round(ownNearbyCourse.distanceMeters)}m from here.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <BigButton variant="secondary" onClick={() => navigate(`/courses/${ownNearbyCourse.id}/edit`)}>
+              Same course — edit it instead
+            </BigButton>
+            <BigButton variant="ghost" onClick={confirmDifferentLayout}>
+              Different layout here (e.g. par-3 course) — keep adding
+            </BigButton>
+          </div>
+        </div>
+      )}
+
       {step === 'locate' && (
         <div className="flex flex-col gap-3">
           <input
@@ -468,7 +570,9 @@ export function CourseBuilder() {
           {searchResults.map((r, i) => (
             <button
               key={i}
-              onClick={() => selectLocation({ lat: r.lat, lng: r.lng }, r.displayName.split(',')[0])}
+              onClick={() =>
+                selectLocation({ lat: r.lat, lng: r.lng }, r.displayName.split(',')[0], r.boundary)
+              }
               className="text-left glass rounded-xl p-3 text-sm"
               style={inkSecondary}
             >

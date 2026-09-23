@@ -131,10 +131,16 @@ export function getCurrentPosition(options?: PositionOptions): Promise<Geolocati
   })
 }
 
+// A golf_course polygon's own OSM element — a "way" (simple polygon) or
+// "relation" (multipolygon). Never "node": a bare point can't be used as an
+// area boundary, so callers fall back to radius-based fetching for those.
+export type OsmBoundaryRef = { osmType: 'way' | 'relation'; osmId: number }
+
 export interface GeocodeResult {
   displayName: string
   lat: number
   lng: number
+  boundary?: OsmBoundaryRef
 }
 
 // Nominatim (OpenStreetMap's free geocoder). Usage policy: max ~1 req/sec,
@@ -152,11 +158,21 @@ export async function searchCourseLocation(query: string): Promise<GeocodeResult
   })
   if (!res.ok) throw new Error(`Course search failed: ${res.status}`)
 
-  const results = (await res.json()) as Array<{ display_name: string; lat: string; lon: string }>
+  const results = (await res.json()) as Array<{
+    display_name: string
+    lat: string
+    lon: string
+    osm_type?: string
+    osm_id?: number
+  }>
   return results.map((r) => ({
     displayName: r.display_name,
     lat: Number(r.lat),
     lng: Number(r.lon),
+    boundary:
+      (r.osm_type === 'way' || r.osm_type === 'relation') && r.osm_id !== undefined
+        ? { osmType: r.osm_type, osmId: r.osm_id }
+        : undefined,
   }))
 }
 
@@ -164,12 +180,15 @@ export interface NearbyCourse {
   name: string
   point: LatLng
   distanceMeters: number
+  boundary?: OsmBoundaryRef
 }
 
 // Finds named golf courses (leisure=golf_course areas/points) near a
-// location, sorted closest-first. Used for "use my location" so it offers
-// actual nearby courses to pick from instead of just centering the map on
-// wherever the phone's GPS happens to be standing (e.g. the parking lot).
+// location, sorted closest-first. Used both for "use my location" (a wide
+// radius, offering actual nearby courses instead of just centering the map
+// on wherever the phone's GPS happens to be standing) and for detecting a
+// sibling course at the same facility (a tight radius — see
+// fetchSiblingCourses).
 export async function fetchNearbyGolfCourses(center: LatLng, radiusMeters = 20_000): Promise<NearbyCourse[]> {
   const query = `
     [out:json][timeout:25];
@@ -184,6 +203,8 @@ export async function fetchNearbyGolfCourses(center: LatLng, radiusMeters = 20_0
 
   const data = (await res.json()) as {
     elements: Array<{
+      type: 'node' | 'way' | 'relation'
+      id: number
       tags?: Record<string, string>
       lat?: number
       lon?: number
@@ -201,11 +222,30 @@ export async function fetchNearbyGolfCourses(center: LatLng, radiusMeters = 20_0
         ? { lat: el.lat, lng: el.lon }
         : undefined
     if (!pos) continue
-    courses.push({ name, point: pos, distanceMeters: distanceMeters(center, pos) })
+    courses.push({
+      name,
+      point: pos,
+      distanceMeters: distanceMeters(center, pos),
+      boundary: el.type === 'way' || el.type === 'relation' ? { osmType: el.type, osmId: el.id } : undefined,
+    })
   }
 
   courses.sort((a, b) => a.distanceMeters - b.distanceMeters)
   return courses.slice(0, 3)
+}
+
+// Facilities commonly run more than one course from the same clubhouse — a
+// regulation course plus a shorter par-3/executive course — close enough
+// together that a plain radius search can't tell them apart. A tight radius
+// here surfaces those as distinct, pickable siblings instead of silently
+// merging their holes together (see fetchOsmGolfFeatures's boundary mode).
+export async function fetchSiblingCourses(
+  center: LatLng,
+  excludeName?: string,
+  radiusMeters = 600,
+): Promise<NearbyCourse[]> {
+  const nearby = await fetchNearbyGolfCourses(center, radiusMeters)
+  return nearby.filter((c) => c.name !== excludeName)
 }
 
 export interface OsmGolfFeature {
@@ -216,23 +256,40 @@ export interface OsmGolfFeature {
   outline?: LatLng[] // full way geometry, when this feature is a line/area rather than a point
 }
 
-// Pulls whatever golf-tagged features Overpass/OSM has near a course center,
+// Pulls whatever golf-tagged features Overpass/OSM has for a course,
 // including full way geometry (so hole/fairway outlines can be drawn, not
 // just a center dot). Coverage varies wildly by course — this is a
 // best-effort pre-fill, not a guaranteed source. The tap-through hole
 // builder is the reliable fallback.
+//
+// When `boundary` is available (the course's own way/relation from
+// Nominatim or fetchNearbyGolfCourses), the query is scoped to strictly
+// inside that polygon — critical when another course shares the same
+// clubhouse nearby, since a flat radius around a point can't distinguish
+// whose holes are whose. Without a boundary (manual/GPS-only entry, or OSM
+// simply has no polygon for it), falls back to the old radius search.
 export async function fetchOsmGolfFeatures(
   center: LatLng,
-  radiusMeters = 1200,
+  options?: { radiusMeters?: number; boundary?: OsmBoundaryRef },
 ): Promise<OsmGolfFeature[]> {
-  const query = `
-    [out:json][timeout:25];
-    (
-      nwr(around:${radiusMeters},${center.lat},${center.lng})["golf"];
-      nwr(around:${radiusMeters},${center.lat},${center.lng})["leisure"="golf_course"];
-    );
-    out body geom;
-  `
+  const radiusMeters = options?.radiusMeters ?? 1200
+  const boundary = options?.boundary
+  const query = boundary
+    ? `
+      [out:json][timeout:25];
+      ${boundary.osmType}(${boundary.osmId})->.course;
+      .course map_to_area->.courseArea;
+      nwr(area.courseArea)["golf"];
+      out body geom;
+    `
+    : `
+      [out:json][timeout:25];
+      (
+        nwr(around:${radiusMeters},${center.lat},${center.lng})["golf"];
+        nwr(around:${radiusMeters},${center.lat},${center.lng})["leisure"="golf_course"];
+      );
+      out body geom;
+    `
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
     body: query,
