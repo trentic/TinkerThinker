@@ -102,9 +102,14 @@ export function EditHoleScoreModal({ score, onClose, onSave }: EditHoleScoreModa
   const [teeShotLie, setTeeShotLie] = useState(score.teeShotLie)
   const [greenInRegulation, setGreenInRegulation] = useState(score.greenInRegulation)
 
+  // A putt is a stroke, so moving the Putts count moves Strokes by the same
+  // amount — matching live-round scoring, where "+1 Putt" always adds a
+  // stroke too. Without this, bumping Putts silently left the total
+  // unchanged unless it happened to push putts past the old stroke count.
   function changePutts(next: number) {
+    const delta = next - putts
     setPutts(next)
-    if (next > strokes) setStrokes(next)
+    setStrokes((s) => Math.max(next, s + delta))
   }
 
   function save() {
