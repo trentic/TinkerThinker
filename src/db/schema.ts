@@ -13,10 +13,13 @@ export interface Course {
   holeCount: 9 | 18
   source: CourseSource
   createdAt: number
-  // Legacy marker from the retired standalone Par 3 Mode: a generic,
-  // no-fixed-layout course some installs may still have historical rounds
-  // against. No longer created — a par-3/executive course is now just a
-  // normal Course, added through the regular course-builder wizard.
+  // Par 3 Mode's own standing course record — 18 generic par-3 "holes"
+  // with no fixed real-world layout, reused across every quick round
+  // instead of requiring a mapped course. Hidden from the normal course
+  // list; see lib/parThreeMode.ts. Distinct from a real par-3/executive
+  // course tracked by name through the normal course-builder wizard
+  // (lib/parThreeDetection.ts helps find those) — this is for casual play
+  // with no setup at all.
   freeform?: boolean
 }
 
