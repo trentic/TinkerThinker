@@ -28,7 +28,7 @@ export interface StatsSummary {
 
 export async function computeStats(): Promise<StatsSummary> {
   // `completed` isn't an indexed field, so filter in memory rather than query on it.
-  const completedRounds = (await db.rounds.toArray()).filter((r) => r.completed)
+  const completedRounds = (await db.rounds.toArray()).filter((r) => r.completed && !r.excludeFromStats)
 
   const summaries: RoundSummary[] = []
   let fairwayEligible = 0

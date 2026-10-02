@@ -101,6 +101,11 @@ export function RoundActive() {
   const [editingScore, setEditingScore] = useState<HoleScore | null>(null)
   const [confirmAbandon, setConfirmAbandon] = useState(false)
   const [abandoning, setAbandoning] = useState(false)
+  // Par 3 Mode rounds are often quick/casual — offered a choice at the very
+  // end instead of always folding into the real-course averages. Any other
+  // round keeps the old behavior (always counted).
+  const [showStatsChoice, setShowStatsChoice] = useState(false)
+  const [finishingRound, setFinishingRound] = useState(false)
 
   const bagClubs = useLiveQuery(() => db.bagClubs.toArray(), [])
   const clubChoices = useMemo(() => {
@@ -469,18 +474,34 @@ export function RoundActive() {
     const idx = holesList.findIndex((h) => h.number === currentHole.number)
     const next = holesList[idx + 1]
     if (!next) {
-      await db.rounds.update(round.id, { completed: true })
-      // Best-effort, non-blocking: the finished round's scores/stats should
-      // reach Drive without the user having to remember "Back up now", but
-      // this must never hold up getting to the scorecard.
-      if (isDriveConnected()) pushBackupToDrive().catch(() => {})
-      navigate(`/round/${round.id}/scorecard`)
+      if (course?.freeform) {
+        // Ask whether this quick round should count — finish the round once
+        // that choice is made (see completeRound).
+        setShowStatsChoice(true)
+        return
+      }
+      await completeRound()
       return
     }
 
     const allScores = await db.holeScores.where('roundId').equals(round.id).toArray()
     setHoleSummary({ nextHole: next, allScores })
     setNextTeeCooldown(5)
+  }
+
+  async function completeRound(excludeFromStats?: boolean) {
+    if (!round) return
+    setFinishingRound(true)
+    try {
+      await db.rounds.update(round.id, excludeFromStats ? { completed: true, excludeFromStats: true } : { completed: true })
+      // Best-effort, non-blocking: the finished round's scores/stats should
+      // reach Drive without the user having to remember "Back up now", but
+      // this must never hold up getting to the scorecard.
+      if (isDriveConnected()) pushBackupToDrive().catch(() => {})
+      navigate(`/round/${round.id}/scorecard`)
+    } finally {
+      setFinishingRound(false)
+    }
   }
 
   async function saveEditedScore(updated: HoleScore) {
@@ -1011,6 +1032,23 @@ export function RoundActive() {
           onClose={() => setEditingScore(null)}
           onSave={saveEditedScore}
         />
+      )}
+
+      {showStatsChoice && (
+        <Modal title="Count this round in your stats?" onClose={() => completeRound()}>
+          <p className="text-sm mb-4" style={inkSecondary}>
+            This was a Par 3 Mode round. Keep it to count toward your averages and handicap, or
+            discard just the stats — the scorecard is saved either way.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <BigButton onClick={() => completeRound()} disabled={finishingRound}>
+              Keep stats
+            </BigButton>
+            <BigButton variant="secondary" onClick={() => completeRound(true)} disabled={finishingRound}>
+              Discard stats
+            </BigButton>
+          </div>
+        </Modal>
       )}
     </div>
   )

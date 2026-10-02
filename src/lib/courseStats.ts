@@ -9,7 +9,7 @@ export interface CourseSummary {
 
 export async function computeCourseSummary(courseId: string): Promise<CourseSummary> {
   const rounds = (await db.rounds.where('courseId').equals(courseId).toArray()).filter(
-    (r) => r.completed,
+    (r) => r.completed && !r.excludeFromStats,
   )
 
   if (rounds.length === 0) {

@@ -6,5 +6,5 @@ import { db } from '../db/db'
 // computeHandicapIndex already apply to rounds directly.
 export async function getCompletedRoundIds(): Promise<Set<string>> {
   const rounds = await db.rounds.toArray()
-  return new Set(rounds.filter((r) => r.completed).map((r) => r.id))
+  return new Set(rounds.filter((r) => r.completed && !r.excludeFromStats).map((r) => r.id))
 }

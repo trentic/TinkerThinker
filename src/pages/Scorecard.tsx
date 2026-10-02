@@ -53,6 +53,15 @@ export function Scorecard() {
         </p>
       </div>
 
+      {round.excludeFromStats && (
+        <p
+          className="text-xs rounded-xl px-3 py-2"
+          style={{ background: 'rgba(255,255,255,0.5)', color: 'var(--ink-muted)' }}
+        >
+          Not counted in your stats — you chose to discard this round's stats when you finished it.
+        </p>
+      )}
+
       <HoleScoreTable scores={scores} onEditHole={setEditingScore} />
       <p className="text-xs -mt-2" style={{ color: 'var(--ink-muted)' }}>
         Tap a score to fix a mistake.

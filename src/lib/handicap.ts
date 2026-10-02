@@ -37,7 +37,7 @@ export interface HandicapResult {
 
 export async function computeHandicapIndex(): Promise<HandicapResult | null> {
   const rounds = (await db.rounds.toArray())
-    .filter((r) => r.completed)
+    .filter((r) => r.completed && !r.excludeFromStats)
     .sort((a, b) => b.date - a.date)
     .slice(0, 20)
 

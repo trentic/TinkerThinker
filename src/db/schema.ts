@@ -76,6 +76,12 @@ export interface Round {
   // reference), since the actual cup moves day to day. Optional/progressive,
   // same pattern as Hole.teeCoords.
   pinPositions?: Record<number, { lat: number; lng: number }>
+  // User opted, at finish time, to keep this round's scorecard but leave it
+  // out of every aggregate (averages, handicap, dispersion, etc.) — offered
+  // for Par 3 Mode rounds, where a quick/casual round often shouldn't skew
+  // a real-course average. Completion status is untouched: an excluded
+  // round still shows as finished everywhere except the stats math.
+  excludeFromStats?: boolean
 }
 
 export interface HoleScore {
